@@ -33,8 +33,9 @@ cp apps/api/.env.example apps/api/.env    # puis adapter (JWT_SECRET : au moins 
 docker compose up -d --wait
 ```
 
-Crée deux bases : `imageservice_dev` et `imageservice_test`. Le port hôte est **5433**
-(pour éviter un conflit avec un PostgreSQL déjà sur 5432). Le script
+Crée deux bases : `imageservice_dev` et `imageservice_test`, et lance Redis. Les ports hôtes sont
+**5433** pour PostgreSQL et **6380** pour Redis (pour éviter un conflit avec un PostgreSQL sur 5432 ou un
+Redis sur 6379). Le script
 `docker/init-db.sql` ne s'exécute qu'à la première création du volume ; pour repartir
 de zéro : `docker compose down -v`.
 
@@ -75,7 +76,7 @@ npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de
 
 | Méthode | Route | Description |
 |---|---|---|
-| GET | `/health` | 200 si l'app et la base répondent, 503 si la base est injoignable |
+| GET | `/health` | `{ status, database, redis }` : 200 « ok » si tout répond, 200 « degraded » si seul Redis est tombé (l'API continue sans cache), 503 si la base est injoignable |
 | POST | `/register` | Corps `{ email, password }` (mot de passe : 8 caractères min.). 201 `{ id, email }` (jamais le hash), 400 validation / JSON malformé, 409 e-mail déjà pris |
 | POST | `/login` | Corps `{ email, password }`. 200 `{ token }` (JWT), 400 validation, 401 identifiants incorrects (même réponse pour e-mail inconnu et mauvais mot de passe) |
 
@@ -112,6 +113,15 @@ racine. Les dérivés apparaissent dans `GET /images`.
 sa taille suit l'image finale. Il est rendu par `sharp` à partir d'un SVG (texte échappé) : **le rendu dépend des
 polices du système** (`sans-serif` gras) ; sur un serveur sans police installée, le texte pourrait ne pas s'afficher. Le résultat ne peut pas dépasser `MAX_IMAGE_PIXELS_SIDE`
 par côté (ajouter un `resize`).
+
+## Redis
+
+Redis (cache et rate limiting, phase 3) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des
+données jetables. Base 0 en développement (`REDIS_URL`), base 1 pour les tests (`TEST_REDIS_URL`) ; les tests ne
+touchent jamais à la base 0. Toutes les clés sont préfixées `ips:`.
+
+Redis est une **optimisation, pas une dépendance critique** : s'il est arrêté, l'API démarre et fonctionne quand
+même (`/health` indique « degraded », un message est écrit dans les logs) et se reconnecte seule à son retour.
 
 ## Variables d'environnement
 

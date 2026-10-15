@@ -126,7 +126,7 @@ Codes HTTP corrects (201 création, 400 validation, 401 non authentifié, 404 in
 |---|---|---|
 | 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | Terminée |
 | 2 | Transformations avec sharp, dérivés stockés | Terminée |
-| 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | À faire |
+| 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | En cours |
 | 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | À faire |
 | 5 | `S3FileStorage`, stockage objet auto-hébergé, URLs présignées | À faire |
 | 6 | Durcissement sécurité, tests de charge (k6/autocannon) | À faire |

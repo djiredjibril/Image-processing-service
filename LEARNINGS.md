@@ -180,3 +180,22 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Dépendance cachée : les polices.** `sharp` dessine le texte du SVG avec les polices du système ; ça marche sur ce Mac, mais un
    serveur minimal (conteneur sans police) peut ne rien afficher. À vérifier avant tout déploiement. Le texte est réduit pour tenir
    dans la largeur de l'image, sans descendre sous une taille minimale lisible.
+
+## Phase 3
+
+### Fondations Redis (`feat/p3-redis-foundation`)
+
+1. **Cache et compteurs = optimisations, pas source de vérité.** PostgreSQL reste la référence ; Redis peut tomber sans
+   que l'API s'arrête. D'où un client réglé pour ÉCHOUER VITE : `enableOfflineQueue: false` (une commande sans connexion est
+   rejetée tout de suite au lieu d'attendre dans une file, ce qui bloquerait les requêtes HTTP), `commandTimeout: 500` ms
+   (un Redis qui ne répond plus ne ralentit pas l'API) et reconnexion automatique avec délai croissant.
+2. **Un événement `error` non écouté plante Node.** Les clients Redis sont des « EventEmitter » : sans écouteur `error`, une
+   connexion refusée fait tomber tout le process. On l'écoute et on ne logge que la première erreur d'une panne et le retour
+   à la normale (pas un message par tentative de reconnexion).
+3. **Piège de démarrage révélé par un test** : sans file d'attente hors-ligne, une commande envoyée avant la fin de la connexion
+   échoue. D'où `waitForRedis` : attente brève au démarrage, jamais bloquante si Redis est absent (l'API démarre « degraded »).
+4. **Santé à deux niveaux** : `/health` renvoie 503 si PostgreSQL tombe (indispensable) mais 200 « degraded » si seul Redis tombe
+   (service dégradé, pas interrompu).
+5. **Isolation des tests** : base Redis 1 pour les tests (0 pour le dev), préfixe de clés `ips:`, et un garde-fou qui refuse de
+   vider (`FLUSHDB`) la base si l'URL de test pointait par erreur sur la base 0. Port hôte 6380 (comme 5433 pour Postgres) pour
+   ne pas entrer en conflit avec d'autres projets locaux. Pas de persistance : des données jetables n'en ont pas besoin.
