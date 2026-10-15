@@ -18,6 +18,7 @@ import { FileSize } from "../../domain/value-objects/file-size.js";
 import { ImageDimensions } from "../../domain/value-objects/image-dimensions.js";
 import { ImageFormat } from "../../domain/value-objects/image-format.js";
 import { StorageKey } from "../../domain/value-objects/storage-key.js";
+import { type ImageSummary, toImageSummary } from "../shared/image-summary.js";
 import { err, isErr, ok, type Result } from "../shared/result.js";
 
 /** Limites de validation, issues de la configuration. */
@@ -35,14 +36,7 @@ export interface UploadImageInput {
 }
 
 /** Métadonnées publiques de l'image créée (jamais la clé de stockage interne). */
-export interface UploadImageOutput {
-  readonly id: string;
-  readonly format: string;
-  readonly sizeBytes: number;
-  readonly width: number;
-  readonly height: number;
-  readonly createdAt: Date;
-}
+export type UploadImageOutput = ImageSummary;
 
 /** Erreurs métier possibles de `UploadImage`. */
 export type UploadImageError =
@@ -125,14 +119,7 @@ export class UploadImage {
       throw error;
     }
 
-    return ok({
-      id: image.id,
-      format: image.format.name,
-      sizeBytes: image.size.bytes,
-      width: image.dimensions.width,
-      height: image.dimensions.height,
-      createdAt: image.createdAt,
-    });
+    return ok(toImageSummary(image));
   }
 
   /** Nettoyage au mieux : un échec ici ne doit pas masquer l'erreur d'origine. */

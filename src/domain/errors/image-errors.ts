@@ -50,3 +50,10 @@ export class CorruptedImageError {
 export class ImageNotFoundError {
   readonly kind = "ImageNotFound" as const;
 }
+
+/** Les paramètres de pagination (page, limite) sont hors bornes. */
+export class InvalidPaginationError {
+  readonly kind = "InvalidPagination" as const;
+
+  constructor(public readonly reason: string) {}
+}

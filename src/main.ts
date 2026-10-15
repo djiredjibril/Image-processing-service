@@ -7,6 +7,7 @@ import "dotenv/config";
 import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
 import { GetImage } from "./application/use-cases/get-image.js";
+import { ListImages } from "./application/use-cases/list-images.js";
 import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
@@ -43,6 +44,7 @@ const app = createApp({
   loginUser: new LoginUser(users, hasher, tokens),
   uploadImage,
   getImage: new GetImage(images, storage),
+  listImages: new ListImages(images),
   tokens,
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
 });

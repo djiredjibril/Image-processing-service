@@ -5,11 +5,12 @@
  */
 import type pg from "pg";
 import { Image } from "../../domain/entities/image.js";
-import type { IImageRepository } from "../../domain/repositories/image-repository.js";
+import type { IImageRepository, ImagePage } from "../../domain/repositories/image-repository.js";
 import { isErr } from "../../domain/shared/result.js";
 import { FileSize } from "../../domain/value-objects/file-size.js";
 import { ImageDimensions } from "../../domain/value-objects/image-dimensions.js";
 import { ImageFormat } from "../../domain/value-objects/image-format.js";
+import type { Pagination } from "../../domain/value-objects/pagination.js";
 import { StorageKey } from "../../domain/value-objects/storage-key.js";
 
 interface ImageRow {
@@ -56,6 +57,22 @@ export class PgImageRepository implements IImageRepository {
     );
     const row = result.rows[0];
     return row === undefined ? null : toImage(row);
+  }
+
+  /** Deux requêtes paramétrées : la page (LIMIT/OFFSET) et le total, filtrées sur le propriétaire. */
+  async listByOwner(ownerId: string, pagination: Pagination): Promise<ImagePage> {
+    const [page, count] = await Promise.all([
+      this.pool.query<ImageRow>(
+        `SELECT id, owner_id, storage_key, original_id, format, size_bytes, width, height, created_at
+         FROM images WHERE owner_id = $1
+         ORDER BY created_at DESC, id DESC
+         LIMIT $2 OFFSET $3`,
+        [ownerId, pagination.limit, pagination.offset],
+      ),
+      this.pool.query<{ total: string }>("SELECT count(*) AS total FROM images WHERE owner_id = $1", [ownerId]),
+    ]);
+    // `count(*)` est un bigint : pg le renvoie en chaîne pour ne pas perdre de précision.
+    return { items: page.rows.map(toImage), total: Number(count.rows[0]?.total ?? 0) };
   }
 }
 

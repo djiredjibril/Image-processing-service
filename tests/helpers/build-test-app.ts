@@ -2,6 +2,7 @@
 import type { Express } from "express";
 import type pg from "pg";
 import { GetImage } from "../../src/application/use-cases/get-image.js";
+import { ListImages } from "../../src/application/use-cases/list-images.js";
 import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
@@ -44,6 +45,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     loginUser: new LoginUser(users, hasher, tokens),
     uploadImage,
     getImage: new GetImage(images, storage),
+    listImages: new ListImages(images),
     tokens,
     maxUploadBytes,
   });
