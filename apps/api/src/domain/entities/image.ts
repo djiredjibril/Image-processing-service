@@ -24,7 +24,7 @@ export interface ImageProps {
 /**
  * Image d'un utilisateur.
  *
- * Invariants : immuable ; l'original ne change jamais (une transformation créera un NOUVEAU
+ * Invariants : immuable ; l'original ne change jamais (une transformation crée un NOUVEAU
  * fichier dérivé) ; `originalId` vaut `null` pour un original et pointe vers l'original
  * pour un dérivé.
  */
@@ -52,6 +52,28 @@ export class Image {
       params.ownerId,
       params.storageKey,
       null,
+      params.format,
+      params.size,
+      params.dimensions,
+      new Date(),
+    );
+  }
+
+  /**
+   * Crée une image DÉRIVÉE : le résultat d'une transformation, stocké dans un nouveau fichier.
+   *
+   * @param params - Propriétaire, clé de stockage, métadonnées, et `originalId` : l'identifiant de l'original
+   * d'où elle provient (jamais celui d'un autre dérivé : on remonte toujours à la racine).
+   * @returns Une nouvelle `Image` dont `originalId` pointe vers l'original.
+   */
+  static createDerived(
+    params: Pick<ImageProps, "ownerId" | "storageKey" | "format" | "size" | "dimensions"> & { readonly originalId: string },
+  ): Image {
+    return new Image(
+      randomUUID(),
+      params.ownerId,
+      params.storageKey,
+      params.originalId,
       params.format,
       params.size,
       params.dimensions,

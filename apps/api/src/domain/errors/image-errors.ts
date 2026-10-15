@@ -57,3 +57,10 @@ export class InvalidPaginationError {
 
   constructor(public readonly reason: string) {}
 }
+
+/** Les paramètres de transformation demandés sont invalides (hors bornes, valeur inconnue, incompatibles avec l'image). */
+export class InvalidTransformationError {
+  readonly kind = "InvalidTransformation" as const;
+
+  constructor(public readonly reason: string) {}
+}

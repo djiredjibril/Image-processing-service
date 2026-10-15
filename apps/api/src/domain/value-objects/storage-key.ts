@@ -31,6 +31,16 @@ export class StorageKey {
   }
 
   /**
+   * Génère la clé d'une image dérivée (résultat d'une transformation).
+   *
+   * @param format - Format réel du fichier produit (détermine l'extension).
+   * @returns Une clé unique de la forme `derived/<uuid>.<ext>`.
+   */
+  static forDerived(format: ImageFormat): StorageKey {
+    return new StorageKey(`derived/${randomUUID()}.${format.extension}`);
+  }
+
+  /**
    * Reconstruit une clé existante (ex. lue en base).
    *
    * @param value - Clé telle que stockée.

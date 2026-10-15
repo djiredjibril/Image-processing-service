@@ -6,6 +6,7 @@
  */
 import type { InvalidPaginationError } from "../../domain/errors/image-errors.js";
 import type { InvalidCredentialsError } from "../../domain/errors/user-errors.js";
+import type { TransformImageError } from "../../application/use-cases/transform-image.js";
 import type { UploadImageError } from "../../application/use-cases/upload-image.js";
 import type { RegisterUserError } from "../../application/use-cases/register-user.js";
 
@@ -80,4 +81,21 @@ export function getImageErrorToHttp(): HttpError {
  */
 export function listImagesErrorToHttp(error: InvalidPaginationError): HttpError {
   return { status: 400, body: { error: error.kind, message: `Pagination invalide : ${error.reason}` } };
+}
+
+/**
+ * Convertit une erreur de `TransformImage` en réponse HTTP.
+ *
+ * @param error - Erreur métier renvoyée par le use case.
+ * @returns 404 (image introuvable, jamais 403) ou 400 (paramètres invalides, source illisible).
+ */
+export function transformErrorToHttp(error: TransformImageError): HttpError {
+  switch (error.kind) {
+    case "ImageNotFound":
+      return getImageErrorToHttp();
+    case "InvalidTransformation":
+      return { status: 400, body: { error: error.kind, message: `Transformation invalide : ${error.reason}` } };
+    case "CorruptedImage":
+      return { status: 400, body: { error: error.kind, message: `Image illisible : ${error.reason}` } };
+  }
 }

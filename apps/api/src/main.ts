@@ -10,6 +10,7 @@ import { GetImage } from "./application/use-cases/get-image.js";
 import { ListImages } from "./application/use-cases/list-images.js";
 import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
+import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
@@ -32,9 +33,11 @@ const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
 const storage = new LocalFileStorage(config.value.STORAGE_LOCAL_DIR);
 const images = new PgImageRepository(pool);
+// Un côté de 8000 px => au plus 8000 x 8000 pixels décodés : borne la mémoire d'un traitement.
+const processor = new SharpImageProcessor({ limitInputPixels: config.value.MAX_IMAGE_PIXELS_SIDE ** 2 });
 const uploadImage = new UploadImage(
   storage,
-  new SharpImageProcessor(),
+  processor,
   images,
   { maxBytes: config.value.MAX_UPLOAD_BYTES, maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
 );
@@ -45,6 +48,7 @@ const app = createApp({
   uploadImage,
   getImage: new GetImage(images, storage),
   listImages: new ListImages(images),
+  transformImage: new TransformImage(images, storage, processor, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
   tokens,
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
   corsOrigin: config.value.CORS_ORIGIN,

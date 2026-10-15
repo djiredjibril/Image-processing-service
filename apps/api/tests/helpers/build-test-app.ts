@@ -5,6 +5,7 @@ import { GetImage } from "../../src/application/use-cases/get-image.js";
 import { ListImages } from "../../src/application/use-cases/list-images.js";
 import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
+import { TransformImage } from "../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
 import { createApp } from "../../src/infrastructure/http/app.js";
 import { SharpImageProcessor } from "../../src/infrastructure/image/sharp-image-processor.js";
@@ -35,12 +36,9 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const tokens = new JwtTokenService(TEST_JWT_SECRET, "1h");
   const storage = new LocalFileStorage(options.storageDir ?? "storage-test");
   const images = new PgImageRepository(pool);
-  const uploadImage = new UploadImage(
-    storage,
-    new SharpImageProcessor(),
-    images,
-    { maxBytes: maxUploadBytes, maxPixelsSide: options.maxPixelsSide ?? 8000 },
-  );
+  const maxPixelsSide = options.maxPixelsSide ?? 8000;
+  const processor = new SharpImageProcessor({ limitInputPixels: maxPixelsSide ** 2 });
+  const uploadImage = new UploadImage(storage, processor, images, { maxBytes: maxUploadBytes, maxPixelsSide });
   return createApp({
     pool,
     registerUser: new RegisterUser(users, hasher),
@@ -48,6 +46,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     uploadImage,
     getImage: new GetImage(images, storage),
     listImages: new ListImages(images),
+    transformImage: new TransformImage(images, storage, processor, { maxPixelsSide }),
     tokens,
     maxUploadBytes,
     corsOrigin: options.corsOrigin ?? "http://localhost:4200",
