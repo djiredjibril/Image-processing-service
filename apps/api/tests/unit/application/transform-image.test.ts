@@ -49,6 +49,16 @@ describe("TransformImage", () => {
     expect(images.images.find((image) => image.id === sourceId)?.originalId).toBeNull();
   });
 
+  it("transmet le filigrane au processeur ; un filigrane invalide est refusé avant tout traitement", async () => {
+    const ok = await run({ watermark: { text: "© Moi", position: "top-left", opacity: 0.7 } });
+    expect(isOk(ok)).toBe(true);
+    expect(processor.transformCalls[0]?.transformations.watermark).toMatchObject({ text: "© Moi", position: "top-left", opacity: 0.7 });
+
+    const refused = await run({ watermark: { text: "</text><script>" } });
+    expect(isErr(refused) && refused.error.kind).toBe("InvalidTransformation");
+    expect(processor.transformCalls).toHaveLength(1);
+  });
+
   it("lit la source et transmet au processeur le contenu, les transformations et le format de sortie", async () => {
     await run({ rotate: 90, format: "webp" });
     expect(processor.transformCalls).toHaveLength(1);

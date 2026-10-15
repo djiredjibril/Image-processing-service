@@ -41,7 +41,7 @@ export interface IImageProcessor {
    * Applique des transformations et encode le résultat. Ne modifie jamais `data`.
    *
    * Garanties de toute implémentation : respecter l'ordre documenté de `TransformationSet`
-   * (orientation EXIF, crop, rotate, flip, mirror, resize, filtre, encodage), appliquer
+   * (orientation EXIF, crop, rotate, flip, mirror, resize, filtre, filigrane, encodage), appliquer
    * l'orientation EXIF puis SUPPRIMER toutes les métadonnées (dont le GPS) du résultat.
    *
    * @param data - Contenu de l'image source.

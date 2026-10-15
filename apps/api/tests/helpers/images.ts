@@ -47,3 +47,35 @@ export async function pixelAt(image: Uint8Array, x: number, y: number): Promise<
 export function isCloseTo(actual: Rgba, expected: Rgba, tolerance = 3): boolean {
   return actual.every((value, index) => Math.abs(value - (expected[index] ?? 0)) <= tolerance);
 }
+
+/** Zone rectangulaire d'une image (coin haut-gauche + taille), en pixels. */
+export interface Region {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** PNG uni, de la couleur donnée. */
+export async function makeSolid(width: number, height: number, background: string): Promise<Buffer> {
+  return sharp({ create: { width, height, channels: 3, background } }).png().toBuffer();
+}
+
+/**
+ * Mesure la luminosité d'une zone : nombre de pixels clairs (> 128) et luminosité maximale (rouge).
+ * Sert à vérifier OÙ un filigrane blanc a été dessiné sur un fond sombre.
+ */
+export async function brightness(image: Uint8Array, region?: Region): Promise<{ bright: number; max: number }> {
+  const { data, info } = await sharp(image).toColourspace("srgb").ensureAlpha().raw().toBuffer({ resolveWithObject: true });
+  const area = region ?? { x: 0, y: 0, width: info.width, height: info.height };
+  let bright = 0;
+  let max = 0;
+  for (let y = area.y; y < area.y + area.height; y += 1) {
+    for (let x = area.x; x < area.x + area.width; x += 1) {
+      const value = data[(y * info.width + x) * 4] ?? 0;
+      max = Math.max(max, value);
+      if (value > 128) bright += 1;
+    }
+  }
+  return { bright, max };
+}

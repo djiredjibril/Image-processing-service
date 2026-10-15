@@ -14,6 +14,7 @@ export const transformBodySchema = z.strictObject({
   mirror: z.boolean().optional(),
   resize: z.strictObject({ width: z.number().optional(), height: z.number().optional(), fit: z.string().optional() }).optional(),
   filter: z.string().optional(),
+  watermark: z.strictObject({ text: z.string(), position: z.string().optional(), opacity: z.number().optional() }).optional(),
   format: z.string().optional(),
   quality: z.number().optional(),
 });

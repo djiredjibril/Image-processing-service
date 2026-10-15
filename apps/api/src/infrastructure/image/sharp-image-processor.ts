@@ -3,12 +3,13 @@
  *
  * Couche : infrastructure (image). Seul endroit qui importe `sharp`.
  */
-import sharp from "sharp";
+import sharp, { type Sharp } from "sharp";
 import { CorruptedImageError } from "../../domain/errors/image-errors.js";
 import type { IImageProcessor, ImageMetadata, TransformedImage } from "../../domain/ports/image-processor.js";
 import { err, ok, type Result } from "../../domain/shared/result.js";
 import { ImageFormat } from "../../domain/value-objects/image-format.js";
 import type { TransformationSet } from "../../domain/value-objects/transformation-set.js";
+import { buildWatermarkSvg } from "./watermark-svg.js";
 
 // Matrice classique du sépia : chaque canal de sortie est un mélange des canaux d'entrée.
 const SEPIA_MATRIX: [[number, number, number], [number, number, number], [number, number, number]] = [
@@ -56,7 +57,7 @@ export class SharpImageProcessor implements IImageProcessor {
 
   /**
    * Applique le pipeline dans l'ordre : orientation EXIF → crop → rotate → flip → mirror → resize →
-   * filtre → encodage. L'ordre est celui des appels : avec `sharp`, il change le résultat
+   * filtre → filigrane → encodage. L'ordre est celui des appels : avec `sharp`, il change le résultat
    * (ex. extraire avant ou après une rotation). `sharp` retire les métadonnées (EXIF, GPS) de la
    * sortie tant qu'on ne demande pas explicitement de les conserver : on ne le demande jamais.
    */
@@ -90,21 +91,29 @@ export class SharpImageProcessor implements IImageProcessor {
         image = image.recomb(SEPIA_MATRIX);
       }
 
-      const quality = transformations.quality?.value;
-      if (outputFormat === ImageFormat.JPEG) {
-        // Une source PNG/WebP transparente est aplatie sur du blanc (le JPEG n'a pas d'alpha).
-        image = image.flatten({ background: OPAQUE_WHITE }).jpeg({ quality });
-      } else if (outputFormat === ImageFormat.WEBP) {
-        image = image.webp({ quality });
-      } else {
-        image = image.png();
+      if (transformations.watermark !== null) {
+        // La taille finale n'est connue qu'une fois le pipeline calculé : on la matérialise (pixels bruts, sans
+        // perte), puis on superpose le calque SVG, dimensionné sur l'image finale.
+        const flat = await image.toColourspace("srgb").raw().toBuffer({ resolveWithObject: true });
+        const svg = buildWatermarkSvg(transformations.watermark, flat.info.width, flat.info.height);
+        image = sharp(flat.data, { raw: { width: flat.info.width, height: flat.info.height, channels: flat.info.channels } })
+          .composite([{ input: Buffer.from(svg), top: 0, left: 0 }]);
       }
 
-      const { data: output, info } = await image.toBuffer({ resolveWithObject: true });
+      const { data: output, info } = await encode(image, outputFormat, transformations.quality?.value).toBuffer({ resolveWithObject: true });
       const format = ImageFormat.fromName(info.format);
       return format === null ? err(new CorruptedImageError("format de sortie inattendu")) : ok({ data: output, format, width: info.width, height: info.height });
     } catch {
       return err(new CorruptedImageError("image illisible ou transformation impossible"));
     }
   }
+}
+
+/** Ajoute l'encodage final au pipeline. */
+function encode(image: Sharp, outputFormat: ImageFormat, quality: number | undefined): Sharp {
+  if (outputFormat === ImageFormat.JPEG) {
+    // Une source PNG/WebP transparente est aplatie sur du blanc (le JPEG n'a pas d'alpha).
+    return image.flatten({ background: OPAQUE_WHITE }).jpeg({ quality });
+  }
+  return outputFormat === ImageFormat.WEBP ? image.webp({ quality }) : image.png();
 }

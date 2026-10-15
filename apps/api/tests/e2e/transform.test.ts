@@ -9,7 +9,7 @@ import request from "supertest";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { ImageFormat } from "../../src/domain/value-objects/image-format.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
-import { BLUE, isCloseTo, makeImage, makeQuadrants, pixelAt, RED } from "../helpers/images.js";
+import { BLUE, brightness, isCloseTo, makeImage, makeQuadrants, makeSolid, pixelAt, RED } from "../helpers/images.js";
 import { createMigratedTestPool, resetTables } from "../helpers/test-db.js";
 
 interface Summary {
@@ -216,5 +216,70 @@ describe("POST /images/:id/transform", () => {
     const source = await uploadAs(aliceToken, await makeQuadrants(40, 20));
     expect((await transform(aliceToken, source.id, { quality: 50, format: "jpeg" })).status).toBe(201);
     expect((await transform(aliceToken, source.id, { quality: 50, format: "webp" })).status).toBe(201);
+  });
+});
+
+describe("POST /images/:id/transform : filigrane", () => {
+  it("201 : le filigrane texte est dessiné dans le coin demandé du dérivé, l'original reste intact", async () => {
+    const black = await makeSolid(200, 100, "#000000");
+    const source = await uploadAs(aliceToken, black);
+
+    const res = await transform(aliceToken, source.id, { watermark: { text: "© Alice", position: "top-left", opacity: 1 } });
+    const derived = res.body as Summary;
+    expect(res.status).toBe(201);
+    expect(derived).toMatchObject({ originalId: source.id, format: "png", width: 200, height: 100 });
+
+    const file = await download(aliceToken, derived.id);
+    expect((await brightness(file.bytes, { x: 0, y: 0, width: 100, height: 50 })).bright).toBeGreaterThan(50);
+    expect((await brightness(file.bytes, { x: 100, y: 50, width: 100, height: 50 })).bright).toBe(0);
+    expect((await download(aliceToken, source.id)).bytes.equals(black)).toBe(true);
+  });
+
+  it("position par défaut : en bas à droite ; combiné avec resize, format et qualité", async () => {
+    const source = await uploadAs(aliceToken, await makeSolid(200, 100, "#000000"));
+    const res = await transform(aliceToken, source.id, { resize: { width: 100 }, watermark: { text: "Hello", opacity: 1 }, format: "webp", quality: 90 });
+    const derived = res.body as Summary;
+    expect(res.status).toBe(201);
+    expect([derived.format, derived.width, derived.height]).toEqual(["webp", 100, 50]);
+
+    const file = await download(aliceToken, derived.id);
+    expect((await brightness(file.bytes, { x: 50, y: 25, width: 50, height: 25 })).bright).toBeGreaterThan(5);
+    expect((await brightness(file.bytes, { x: 0, y: 0, width: 50, height: 25 })).bright).toBe(0);
+  });
+
+  it("accepte un texte avec & et ' sans casser le rendu", async () => {
+    const source = await uploadAs(aliceToken, await makeSolid(200, 100, "#000000"));
+    const res = await transform(aliceToken, source.id, { watermark: { text: "Tom & Jerry's", position: "center", opacity: 1 } });
+    expect(res.status).toBe(201);
+  });
+
+  it.each([
+    ["texte vide", { watermark: { text: "" } }],
+    ["texte d'espaces", { watermark: { text: "     " } }],
+    ["texte de 31 caractères", { watermark: { text: "a".repeat(31) } }],
+    ["injection de balise", { watermark: { text: "</text><script>alert(1)</script>" } }],
+    ["balise SVG", { watermark: { text: "<svg onload=alert(1)>" } }],
+    ["guillemet double", { watermark: { text: 'a" onclick="x' } }],
+    ["saut de ligne", { watermark: { text: "a\nb" } }],
+    ["emoji", { watermark: { text: "😀" } }],
+    ["texte manquant", { watermark: { position: "center" } }],
+    ["texte du mauvais type", { watermark: { text: 123 } }],
+    ["position inconnue", { watermark: { text: "ok", position: "milieu" } }],
+    ["opacité trop faible", { watermark: { text: "ok", opacity: 0.05 } }],
+    ["opacité trop forte", { watermark: { text: "ok", opacity: 1.5 } }],
+    ["opacité du mauvais type", { watermark: { text: "ok", opacity: "0.5" } }],
+    ["champ inconnu dans le filigrane", { watermark: { text: "ok", font: "Comic Sans" } }],
+    ["filigrane qui n'est pas un objet", { watermark: "ok" }],
+  ])("400 : %s", async (_name, body) => {
+    const source = await uploadAs(aliceToken, await makeSolid(200, 100, "#000000"));
+    const res = await transform(aliceToken, source.id, body);
+    expect(res.status).toBe(400);
+    expect((await pool.query("SELECT 1 FROM images")).rowCount).toBe(1);
+  });
+
+  it("404 pour le filigrane sur l'image d'un autre utilisateur ; 401 sans jeton", async () => {
+    const source = await uploadAs(aliceToken, await makeSolid(200, 100, "#000000"));
+    expect((await transform(bobToken, source.id, { watermark: { text: "x" } })).status).toBe(404);
+    expect((await request(app).post(`/images/${source.id}/transform`).send({ watermark: { text: "x" } })).status).toBe(401);
   });
 });

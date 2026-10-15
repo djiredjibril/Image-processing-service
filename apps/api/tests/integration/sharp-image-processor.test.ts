@@ -6,7 +6,7 @@ import { isErr, isOk } from "../../src/domain/shared/result.js";
 import { ImageFormat } from "../../src/domain/value-objects/image-format.js";
 import { type RawTransformationInput, TransformationSet } from "../../src/domain/value-objects/transformation-set.js";
 import { SharpImageProcessor } from "../../src/infrastructure/image/sharp-image-processor.js";
-import { BLUE, GREEN, isCloseTo, makeImage, makeQuadrants, pixelAt, RED, YELLOW } from "../helpers/images.js";
+import { BLUE, brightness, GREEN, isCloseTo, makeImage, makeQuadrants, makeSolid, pixelAt, RED, YELLOW } from "../helpers/images.js";
 
 describe("SharpImageProcessor", () => {
   const processor = new SharpImageProcessor();
@@ -234,6 +234,85 @@ describe("SharpImageProcessor.transform", () => {
       const limited = new SharpImageProcessor({ limitInputPixels: 100 });
       const result = await limited.transform(await makeQuadrants(40, 20), transformationsOf({ flip: true }), ImageFormat.PNG);
       expect(isErr(result)).toBe(true);
+    });
+  });
+
+  describe("filigrane", () => {
+    // Fond noir 300×150 : tout pixel clair vient du filigrane (texte blanc).
+    const W = 300;
+    const H = 150;
+    const quadrant = (right: boolean, bottom: boolean) => ({ x: right ? W / 2 : 0, y: bottom ? H / 2 : 0, width: W / 2, height: H / 2 });
+    const watermarked = async (watermark: NonNullable<RawTransformationInput["watermark"]>, extra: RawTransformationInput = {}) =>
+      run({ watermark, ...extra }, ImageFormat.PNG, await makeSolid(W, H, "#000000"));
+
+    it.each([
+      ["top-left", false, false],
+      ["top-right", true, false],
+      ["bottom-left", false, true],
+      ["bottom-right", true, true],
+    ] as const)("position %s : le texte apparaît dans le bon coin et pas dans le coin opposé", async (position, right, bottom) => {
+      const out = await watermarked({ text: "Hello", position, opacity: 1 });
+      expect((await brightness(out.data, quadrant(right, bottom))).bright).toBeGreaterThan(50);
+      expect((await brightness(out.data, quadrant(!right, !bottom))).bright).toBe(0);
+    });
+
+    it("center : le texte est au milieu de l'image, pas dans les coins", async () => {
+      const out = await watermarked({ text: "Hello", position: "center", opacity: 1 });
+      expect((await brightness(out.data, { x: 60, y: 50, width: 180, height: 50 })).bright).toBeGreaterThan(50);
+      expect((await brightness(out.data, { x: 0, y: 0, width: 60, height: 40 })).bright).toBe(0);
+      expect((await brightness(out.data, { x: 240, y: 110, width: 60, height: 40 })).bright).toBe(0);
+    });
+
+    it("ne change ni les dimensions ni le format de l'image", async () => {
+      const out = await watermarked({ text: "Hello" });
+      expect([out.width, out.height]).toEqual([W, H]);
+      expect(ImageFormat.fromMagicBytes(out.data)).toBe(ImageFormat.PNG);
+    });
+
+    it("l'opacité règle la force du filigrane : 0,2 reste très sombre, 1 est blanc franc", async () => {
+      const faint = await watermarked({ text: "Hello", position: "center", opacity: 0.2 });
+      const strong = await watermarked({ text: "Hello", position: "center", opacity: 1 });
+      expect((await brightness(faint.data)).max).toBeLessThan(90);
+      expect((await brightness(faint.data)).max).toBeGreaterThan(20);
+      expect((await brightness(strong.data)).max).toBeGreaterThan(220);
+    });
+
+    it("sans filigrane, l'image reste uniformément noire (le test de position est donc discriminant)", async () => {
+      const out = await run({ flip: true }, ImageFormat.PNG, await makeSolid(W, H, "#000000"));
+      expect((await brightness(out.data)).max).toBe(0);
+    });
+
+    it("le filigrane est posé APRÈS le resize : il suit la taille finale et reste entièrement dans l'image", async () => {
+      const out = await watermarked({ text: "Hello World", position: "bottom-right", opacity: 1 }, { resize: { width: 100 } });
+      expect([out.width, out.height]).toEqual([100, 50]);
+      expect((await brightness(out.data, { x: 40, y: 25, width: 60, height: 25 })).bright).toBeGreaterThan(10);
+      expect((await brightness(out.data, { x: 0, y: 0, width: 50, height: 25 })).bright).toBe(0);
+    });
+
+    it("le filigrane est posé APRÈS le filtre : il garde sa couleur blanche sur un fond sépia", async () => {
+      const out = await run({ filter: "sepia", watermark: { text: "Hello", position: "center", opacity: 1 } }, ImageFormat.PNG, await makeSolid(W, H, "#ff0000"));
+      expect(isCloseTo(await pixelAt(out.data, 2, 2), [100, 89, 69, 255], 3)).toBe(true);
+      expect((await brightness(out.data, { x: 60, y: 50, width: 180, height: 50 })).max).toBeGreaterThan(220);
+    });
+
+    it("fonctionne avec une image en niveaux de gris et en sortie JPEG ou WebP", async () => {
+      for (const format of [ImageFormat.JPEG, ImageFormat.WEBP]) {
+        const out = await run({ filter: "grayscale", watermark: { text: "Hello", position: "center", opacity: 1 } }, format, await makeSolid(W, H, "#000000"));
+        expect(out.format).toBe(format);
+        expect((await brightness(out.data, { x: 60, y: 50, width: 180, height: 50 })).bright).toBeGreaterThan(50);
+      }
+    });
+
+    it("rend sans erreur un texte contenant & et ' (échappés dans le SVG), et des accents", async () => {
+      const out = await watermarked({ text: "Tom & Jerry's Café", position: "center", opacity: 1 });
+      expect((await brightness(out.data, { x: 20, y: 50, width: 260, height: 50 })).bright).toBeGreaterThan(50);
+    });
+
+    it("conserve la transparence d'un PNG source en sortie PNG", async () => {
+      const transparent = await sharp({ create: { width: W, height: H, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } }).png().toBuffer();
+      const out = await run({ watermark: { text: "Hello", position: "center", opacity: 1 } }, ImageFormat.PNG, transparent);
+      expect((await pixelAt(out.data, 1, 1))[3]).toBe(0);
+      expect((await brightness(out.data, { x: 60, y: 50, width: 180, height: 50 })).bright).toBeGreaterThan(50);
     });
   });
 });

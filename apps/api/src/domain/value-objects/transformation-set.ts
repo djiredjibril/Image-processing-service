@@ -12,6 +12,7 @@ import { ImageFormat } from "./image-format.js";
 import { Quality } from "./quality.js";
 import { type RawResize, ResizeParams } from "./resize-params.js";
 import { Rotation } from "./rotation.js";
+import { type RawWatermark, Watermark } from "./watermark.js";
 
 /** Transformations telles que reçues (valeurs non vérifiées, toutes optionnelles). */
 export interface RawTransformationInput {
@@ -21,6 +22,7 @@ export interface RawTransformationInput {
   readonly mirror?: boolean | undefined;
   readonly resize?: RawResize | undefined;
   readonly filter?: string | undefined;
+  readonly watermark?: RawWatermark | undefined;
   readonly format?: string | undefined;
   readonly quality?: number | undefined;
 }
@@ -33,7 +35,8 @@ export interface TransformationLimits {
 
 /**
  * Ensemble de transformations à appliquer, dans un ORDRE FIXE : orientation EXIF → crop →
- * rotate → flip → mirror → resize → filtre → format et qualité.
+ * rotate → flip → mirror → resize → filtre → filigrane → format et qualité. Le filigrane vient
+ * APRÈS le redimensionnement (sa taille suit l'image finale) et APRÈS le filtre (il garde sa couleur).
  *
  * Invariants : chaque élément présent est valide ; au moins une opération est demandée ;
  * `flip` est le retournement vertical, `mirror` le miroir horizontal.
@@ -46,6 +49,7 @@ export class TransformationSet {
     public readonly mirror: boolean,
     public readonly resize: ResizeParams | null,
     public readonly filter: ImageFilter | null,
+    public readonly watermark: Watermark | null,
     public readonly format: ImageFormat | null,
     public readonly quality: Quality | null,
   ) {}
@@ -66,6 +70,8 @@ export class TransformationSet {
     if (isErr(resize)) return err(resize.error);
     const filter = optional(raw.filter, (value) => ImageFilter.create(value));
     if (isErr(filter)) return err(filter.error);
+    const watermark = optional(raw.watermark, (value) => Watermark.create(value));
+    if (isErr(watermark)) return err(watermark.error);
     const format = optional(raw.format, parseFormat);
     if (isErr(format)) return err(format.error);
     const quality = optional(raw.quality, (value) => Quality.create(value));
@@ -78,6 +84,7 @@ export class TransformationSet {
       raw.mirror === true,
       resize.value,
       filter.value,
+      watermark.value,
       format.value,
       quality.value,
     );
@@ -118,7 +125,7 @@ export class TransformationSet {
     const rotates = this.rotation !== null && !this.rotation.isIdentity;
     return (
       this.crop !== null || rotates || this.flip || this.mirror || this.resize !== null ||
-      this.filter !== null || this.format !== null || this.quality !== null
+      this.filter !== null || this.watermark !== null || this.format !== null || this.quality !== null
     );
   }
 }

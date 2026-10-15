@@ -123,6 +123,15 @@ describe("TransformationSet", () => {
     }
   });
 
+  it("le filigrane seul est une opération ; un filigrane invalide est propagé", () => {
+    const valid = create({ watermark: { text: "Hello", position: "center", opacity: 0.8 } });
+    expect(isOk(valid) && valid.value.watermark?.text).toBe("Hello");
+    for (const watermark of [{ text: "" }, { text: "<b>" }, { text: "ok", position: "nulle part" }, { text: "ok", opacity: 2 }]) {
+      const result = create({ watermark });
+      expect(isErr(result) && result.error.kind).toBe("InvalidTransformation");
+    }
+  });
+
   it("propage le premier paramètre invalide", () => {
     for (const raw of [{ rotate: 999 }, { filter: "blur" }, { format: "gif" }, { quality: 0 }, { resize: { width: MAX + 1 } }, { crop: { x: -1, y: 0, width: 1, height: 1 } }]) {
       const result = create(raw);
