@@ -6,6 +6,7 @@
 import "dotenv/config";
 import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
+import { GetImage } from "./application/use-cases/get-image.js";
 import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
@@ -28,10 +29,12 @@ const pool = createPool(config.value.DATABASE_URL);
 const users = new PgUserRepository(pool);
 const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
+const storage = new LocalFileStorage(config.value.STORAGE_LOCAL_DIR);
+const images = new PgImageRepository(pool);
 const uploadImage = new UploadImage(
-  new LocalFileStorage(config.value.STORAGE_LOCAL_DIR),
+  storage,
   new SharpImageProcessor(),
-  new PgImageRepository(pool),
+  images,
   { maxBytes: config.value.MAX_UPLOAD_BYTES, maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
 );
 const app = createApp({
@@ -39,6 +42,7 @@ const app = createApp({
   registerUser: new RegisterUser(users, hasher),
   loginUser: new LoginUser(users, hasher, tokens),
   uploadImage,
+  getImage: new GetImage(images, storage),
   tokens,
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
 });

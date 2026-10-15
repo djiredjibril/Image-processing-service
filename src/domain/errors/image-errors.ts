@@ -40,3 +40,13 @@ export class CorruptedImageError {
 
   constructor(public readonly reason: string) {}
 }
+
+/**
+ * Image introuvable POUR CET UTILISATEUR.
+ *
+ * Volontairement identique pour « n'existe pas » et « appartient à quelqu'un d'autre » :
+ * répondre 403 révélerait qu'une image existe. Traduite en 404 dans les deux cas.
+ */
+export class ImageNotFoundError {
+  readonly kind = "ImageNotFound" as const;
+}

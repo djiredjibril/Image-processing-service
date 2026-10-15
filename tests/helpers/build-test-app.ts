@@ -1,6 +1,7 @@
 /** Aide de test : assemble l'app Express complète avec les vraies implémentations. */
 import type { Express } from "express";
 import type pg from "pg";
+import { GetImage } from "../../src/application/use-cases/get-image.js";
 import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
@@ -29,10 +30,12 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const users = new PgUserRepository(pool);
   const hasher = new Argon2PasswordHasher();
   const tokens = new JwtTokenService(TEST_JWT_SECRET, "1h");
+  const storage = new LocalFileStorage(options.storageDir ?? "storage-test");
+  const images = new PgImageRepository(pool);
   const uploadImage = new UploadImage(
-    new LocalFileStorage(options.storageDir ?? "storage-test"),
+    storage,
     new SharpImageProcessor(),
-    new PgImageRepository(pool),
+    images,
     { maxBytes: maxUploadBytes, maxPixelsSide: options.maxPixelsSide ?? 8000 },
   );
   return createApp({
@@ -40,6 +43,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     registerUser: new RegisterUser(users, hasher),
     loginUser: new LoginUser(users, hasher, tokens),
     uploadImage,
+    getImage: new GetImage(images, storage),
     tokens,
     maxUploadBytes,
   });

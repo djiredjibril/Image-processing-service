@@ -61,3 +61,12 @@ export function uploadErrorToHttp(error: UploadImageError): HttpError {
       return { status: 400, body: { error: error.kind, message: `Image illisible : ${error.reason}` } };
   }
 }
+
+/**
+ * Réponse HTTP d'une image introuvable (inconnue OU appartenant à un autre utilisateur).
+ *
+ * @returns Toujours 404 avec le même corps : jamais 403, pour ne pas révéler l'existence d'une image.
+ */
+export function getImageErrorToHttp(): HttpError {
+  return { status: 404, body: { error: "ImageNotFound", message: "Image introuvable" } };
+}
