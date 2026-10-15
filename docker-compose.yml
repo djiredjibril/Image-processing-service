@@ -1,0 +1,22 @@
+# PostgreSQL local de développement. Deux bases : imageservice_dev et imageservice_test.
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: imageservice
+      POSTGRES_PASSWORD: imageservice
+      POSTGRES_DB: imageservice_dev
+    # Port hôte 5433 pour ne pas entrer en conflit avec un PostgreSQL déjà présent sur 5432.
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Exécuté une seule fois, à la première création du volume.
+      - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U imageservice -d imageservice_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes:
+  pgdata:
