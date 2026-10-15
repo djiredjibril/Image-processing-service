@@ -49,6 +49,7 @@ Ce n'est pas un produit à livrer vite. **L'objectif principal est que le dével
 | Traitement d'image | `sharp`, derrière l'interface `IImageProcessor` |
 | Upload HTTP | `multer` (ou équivalent) |
 | Tests | Vitest + `supertest` : unitaires, intégration, E2E |
+| Web (`apps/web`) | Angular 21 (standalone, signals, zoneless), Tailwind CSS v4, tests Vitest (jsdom) |
 | Cache / files (phases 3-4) | Redis, BullMQ |
 | Stockage objet (phase 5) | S3-compatible auto-hébergé (SeaweedFS ou Garage) via `@aws-sdk/client-s3` |
 

@@ -1,14 +1,14 @@
 # Image Processing Service
 
-API backend d'apprentissage (Node.js, TypeScript, Express, PostgreSQL) et, à venir, une petite
-application web Angular pour la consommer. Voir `CLAUDE.md` (source de vérité),
+API backend d'apprentissage (Node.js, TypeScript, Express, PostgreSQL) et une petite
+application web Angular (Tailwind CSS) pour la consommer. Voir `CLAUDE.md` (source de vérité),
 `ENGINEERING_RULES.md` (architecture) et `WORKFLOW.md` (cycle de travail).
 
 ## Structure du monorepo (npm workspaces)
 
 ```
 apps/api/        API Express (code, tests, migrations SQL, .env)
-apps/web/        application Angular (à venir)
+apps/web/        application Angular 21 + Tailwind CSS (consomme l'API)
 docker-compose.yml, docker/   PostgreSQL local (infra partagée)
 postman/         collection Postman
 ```
@@ -43,13 +43,28 @@ de zéro : `docker compose down -v`.
 ```bash
 npm run migrate   # applique apps/api/db/migrations/NNN_*.sql sur la base de dev
 npm run dev:api   # API avec rechargement, http://localhost:3001
+npm run dev:web   # application Angular, http://localhost:4200 (dans un second terminal)
 ```
+
+## Application web (`apps/web`)
+
+Angular 21 (composants standalone, signals, mode sans zone) + Tailwind CSS v4. Pages : connexion,
+inscription, galerie paginée, envoi d'une image, visualisation. Elle appelle l'API sur
+`http://localhost:3001` (voir `apps/web/src/app/core/api-config.ts`) ; l'API autorise l'origine
+`http://localhost:4200` via `CORS_ORIGIN`. Le jeton JWT est conservé dans `localStorage`
+(compromis d'apprentissage, voir `LEARNINGS.md`).
+
+Les images étant protégées, elles sont téléchargées avec `HttpClient` (en-tête `Authorization`)
+puis affichées via une URL objet : une balise `<img src>` ne peut pas envoyer de jeton.
+
+> Version d'Angular : 21 (la 22 exige Node >= 24.15 ; le projet est testé avec Node 24.11).
 
 ## Tests et qualité
 
 ```bash
 npm test                  # unit + integration + E2E de tous les workspaces
-npm run typecheck && npm run lint
+npm run typecheck && npm run lint   # lint : API uniquement
+npm test -w apps/web                 # tests de l'application Angular (Vitest, jsdom)
 # Un seul niveau de tests de l'API :
 npm run test:unit -w apps/api        # domaine / use cases, sans réseau ni DB
 npm run test:integration -w apps/api # repositories, storage, migrator (imageservice_test)

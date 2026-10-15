@@ -121,3 +121,21 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    en-têtes `Authorization`/`Content-Type`, `Vary: Origin`. Pas de `credentials` : l'API utilise un jeton Bearer, pas de cookie.
 5. **Piège de la bibliothèque** : avec `origin: "<chaîne>"`, `cors` renvoie TOUJOURS cette origine, même à un tiers (le
    navigateur bloque quand même). Une fonction de comparaison stricte ne renvoie aucun en-tête aux origines inconnues.
+
+### Application web Angular + Tailwind (`feat/web-app`)
+
+1. **Une balise `<img>` ne peut pas envoyer `Authorization`.** Pour afficher une image protégée, on la télécharge avec
+   `HttpClient` en `blob` (l'intercepteur ajoute le jeton), puis on crée une URL locale `URL.createObjectURL(blob)`.
+   Piège : cette URL garde le blob en mémoire tant qu'elle n'est pas révoquée (`revokeObjectURL`) : le composant la libère
+   quand l'identifiant change ou quand il est détruit. Conséquence : il n'y a pas de miniature côté serveur, la galerie
+   télécharge les images en taille réelle (les transformations de la phase 2 pourront y remédier).
+2. **Intercepteur HTTP fonctionnel** : un point unique ajoute `Bearer <jeton>` et traite le 401 (déconnexion + retour
+   à `/login`). Il n'envoie le jeton QU'À l'URL de l'API (jamais à un autre domaine) et ne redirige pas sur un 401 sans
+   jeton (mauvais mot de passe à la connexion : c'est une erreur de formulaire, pas une session expirée).
+3. **Guards = ergonomie, pas sécurité** : `authGuard` masque les pages privées, mais seule l'API protège vraiment les
+   données (elle exige un jeton valide et filtre par propriétaire). Tout ce qui tourne dans le navigateur peut être contourné.
+4. **Stockage du jeton** : `localStorage` est simple mais lisible par du JavaScript injecté (XSS). Un cookie `HttpOnly`
+   serait plus sûr, mais impose cookies + protection CSRF côté API. Compromis assumé pour un projet d'apprentissage local.
+5. **Signals + mode sans zone** : l'état (`signal`, `computed`) pilote l'affichage sans `zone.js` ; un `effect` avec
+   `onCleanup` gère le téléchargement annulable. Le contrôle de fichier côté navigateur (type, poids) n'est qu'un
+   confort : l'API revérifie tout (magic bytes, poids, dimensions). Tailwind v4 se branche via PostCSS (`@import 'tailwindcss'`).
