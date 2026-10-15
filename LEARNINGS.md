@@ -36,3 +36,17 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Un seul traducteur erreur → HTTP** (`error-mapping.ts`) avec un `switch` exhaustif sur `kind` :
    si on ajoute une erreur, le compilateur signale l'oubli. Piège de test : un test qui
    `DROP` une table partagée casse les autres, d'où un schéma dédié pour le test du migrator.
+
+### Feature 2 : connexion et middleware JWT (`feat/p1-login-user`)
+
+1. **Anti-énumération** : une seule `InvalidCredentialsError` pour e-mail mal formé, inconnu ou
+   mauvais mot de passe, et même réponse HTTP 401 : l'attaquant ne peut pas deviner quels comptes existent.
+2. **Attaque par le temps (timing)** : un e-mail inconnu répondrait plus vite (pas de hachage). On
+   vérifie donc un hash factice (calculé une fois) pour égaliser le temps de réponse.
+3. **JWT** : un jeton signé (HS256) contient `sub` (id utilisateur) et `exp`. Le serveur ne stocke rien
+   (stateless) : il vérifie seulement la signature. Piège : accepter uniquement l'algorithme attendu
+   (sinon `alg: none` ou un changement d'algorithme contourne la signature) et exiger `exp`.
+4. **Le port `ITokenService`** garde le domaine ignorant de JWT ; `verify` renvoie `null` au lieu de
+   lever une erreur pour un jeton invalide (un jeton invalide est un cas normal, pas une panne).
+5. **Middleware** : lit `Authorization: Bearer`, place l'identité dans `req.auth` (augmentation de
+   type Express), répond 401 + `WWW-Authenticate: Bearer`. Il ne logge jamais le jeton.
