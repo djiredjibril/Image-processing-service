@@ -42,6 +42,15 @@ describe("loadConfig", () => {
     expect(isErr(loadConfig({ ...validEnv, JWT_EXPIRES_IN: "bientôt" }))).toBe(true);
   });
 
+  it("CORS_ORIGIN : défaut Angular, origine exacte acceptée, jokers et chemins refusés", () => {
+    const withDefault = loadConfig(validEnv);
+    expect(isOk(withDefault) && withDefault.value.CORS_ORIGIN).toBe("http://localhost:4200");
+    expect(isOk(loadConfig({ ...validEnv, CORS_ORIGIN: "https://app.example.com" }))).toBe(true);
+    for (const bad of ["*", "localhost:4200", "http://localhost:4200/", "http://localhost:4200/app", ""]) {
+      expect(isErr(loadConfig({ ...validEnv, CORS_ORIGIN: bad }))).toBe(true);
+    }
+  });
+
   it("refuse un STORAGE_DRIVER inconnu et un PORT hors bornes", () => {
     expect(isErr(loadConfig({ ...validEnv, STORAGE_DRIVER: "s3" }))).toBe(true);
     expect(isErr(loadConfig({ ...validEnv, PORT: "70000" }))).toBe(true);

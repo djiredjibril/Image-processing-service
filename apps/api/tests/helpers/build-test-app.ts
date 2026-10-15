@@ -23,6 +23,8 @@ export interface TestAppOptions {
   readonly storageDir?: string;
   readonly maxUploadBytes?: number;
   readonly maxPixelsSide?: number;
+  /** Origine CORS autorisée (défaut : celle de l'app Angular en dev). */
+  readonly corsOrigin?: string;
 }
 
 /** Construit l'application avec la base de test fournie (limites par défaut : 10 Mo, 8000 px). */
@@ -48,5 +50,6 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     listImages: new ListImages(images),
     tokens,
     maxUploadBytes,
+    corsOrigin: options.corsOrigin ?? "http://localhost:4200",
   });
 }

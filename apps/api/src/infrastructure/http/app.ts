@@ -4,6 +4,7 @@
  * Couche : infrastructure (HTTP). Elle reçoit ses dépendances en paramètre
  * (pas de singleton) pour que les tests E2E puissent injecter la base de test.
  */
+import cors from "cors";
 import express, { type Express } from "express";
 import type pg from "pg";
 import type { GetImage } from "../../application/use-cases/get-image.js";
@@ -30,6 +31,8 @@ export interface AppDependencies {
   readonly listImages: ListImages;
   readonly tokens: ITokenService;
   readonly maxUploadBytes: number;
+  /** Unique origine navigateur autorisée à appeler l'API (CORS). */
+  readonly corsOrigin: string;
 }
 
 /**
@@ -43,6 +46,20 @@ export interface AppDependencies {
  */
 export function createApp(deps: AppDependencies): Express {
   const app = express();
+  // CORS en tout premier : une requête « preflight » (OPTIONS) n'a pas d'en-tête Authorization
+  // et doit être acceptée avant l'authentification. Une SEULE origine est autorisée (jamais `*`).
+  // Pas de `credentials` : l'API s'authentifie par jeton Bearer, pas par cookie.
+  app.use(
+    cors({
+      // Comparaison stricte : seule l'origine exacte reçoit des en-têtes CORS, toute autre n'en reçoit aucun.
+      origin: (origin, callback) => {
+        callback(null, origin === deps.corsOrigin);
+      },
+      methods: ["GET", "POST"],
+      allowedHeaders: ["Authorization", "Content-Type"],
+      maxAge: 600,
+    }),
+  );
   // Limite la taille du corps JSON : protège la mémoire contre les envois démesurés.
   app.use(express.json({ limit: "100kb" }));
 

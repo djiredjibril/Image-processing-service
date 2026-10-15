@@ -47,6 +47,7 @@ const app = createApp({
   listImages: new ListImages(images),
   tokens,
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
+  corsOrigin: config.value.CORS_ORIGIN,
 });
 
 const server = app.listen(config.value.PORT, () => {

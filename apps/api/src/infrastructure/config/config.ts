@@ -7,6 +7,15 @@
 import { z } from "zod";
 import { err, ok, type Result } from "../../application/shared/result.js";
 
+/** Vrai si la chaîne est exactement une origine (`schéma://hôte[:port]`), sans chemin ni `/` final. */
+function isPlainOrigin(value: string): boolean {
+  try {
+    return new URL(value).origin === value;
+  } catch {
+    return false;
+  }
+}
+
 const configSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
   DATABASE_URL: z.string().min(1),
@@ -16,6 +25,10 @@ const configSchema = z.object({
     .string()
     .regex(/^\d+[smhdw]$/, "JWT_EXPIRES_IN doit ressembler à 30m, 1h, 7d")
     .default("1h"),
+  CORS_ORIGIN: z
+    .string()
+    .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")
+    .default("http://localhost:4200"),
   STORAGE_DRIVER: z.literal("local").default("local"),
   STORAGE_LOCAL_DIR: z.string().min(1).default("storage"),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),
