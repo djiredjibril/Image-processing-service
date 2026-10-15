@@ -6,8 +6,11 @@
 import "dotenv/config";
 import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
+import { RegisterUser } from "./application/use-cases/register-user.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { createPool } from "./infrastructure/persistence/database.js";
+import { PgUserRepository } from "./infrastructure/persistence/pg-user-repository.js";
+import { Argon2PasswordHasher } from "./infrastructure/security/argon2-password-hasher.js";
 
 const config = loadConfig(process.env);
 if (isErr(config)) {
@@ -16,7 +19,8 @@ if (isErr(config)) {
 }
 
 const pool = createPool(config.value.DATABASE_URL);
-const app = createApp({ pool });
+const registerUser = new RegisterUser(new PgUserRepository(pool), new Argon2PasswordHasher());
+const app = createApp({ pool, registerUser });
 
 const server = app.listen(config.value.PORT, () => {
   console.log(`Serveur démarré sur le port ${String(config.value.PORT)}`);

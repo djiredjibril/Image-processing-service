@@ -1,17 +1,18 @@
 /** Test d'intégration du migrator contre la base `imageservice_test`. */
-import "dotenv/config";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import pg from "pg";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPool } from "../../src/infrastructure/persistence/database.js";
 import { runMigrations } from "../../src/infrastructure/persistence/migrator.js";
+import { testDatabaseUrl } from "../helpers/test-db.js";
 
-const databaseUrl = process.env["TEST_DATABASE_URL"];
-if (databaseUrl === undefined) {
-  throw new Error("TEST_DATABASE_URL manquante (copier .env.example vers .env)");
-}
-const pool = createPool(databaseUrl);
+// Schéma dédié : le test de migrator ne doit jamais toucher aux vraies tables du projet
+// (schema_migrations, users) partagées avec les autres tests d'intégration.
+const SCHEMA = "migrator_test";
+const adminPool = createPool(testDatabaseUrl());
+const pool = new pg.Pool({ connectionString: testDatabaseUrl(), options: `-c search_path=${SCHEMA}` });
 let dir: string;
 
 beforeAll(async () => {
@@ -19,12 +20,14 @@ beforeAll(async () => {
 });
 
 beforeEach(async () => {
-  await pool.query("DROP TABLE IF EXISTS schema_migrations, test_a, test_b CASCADE");
+  await adminPool.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
+  await adminPool.query(`CREATE SCHEMA ${SCHEMA}`);
 });
 
 afterAll(async () => {
-  await pool.query("DROP TABLE IF EXISTS schema_migrations, test_a, test_b CASCADE");
+  await adminPool.query(`DROP SCHEMA IF EXISTS ${SCHEMA} CASCADE`);
   await pool.end();
+  await adminPool.end();
   await rm(dir, { recursive: true, force: true });
 });
 
