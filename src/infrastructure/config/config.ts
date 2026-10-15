@@ -12,7 +12,10 @@ const configSchema = z.object({
   DATABASE_URL: z.string().min(1),
   TEST_DATABASE_URL: z.string().min(1),
   JWT_SECRET: z.string().min(32, "JWT_SECRET doit faire au moins 32 caractères"),
-  JWT_EXPIRES_IN: z.string().min(1).default("1h"),
+  JWT_EXPIRES_IN: z
+    .string()
+    .regex(/^\d+[smhdw]$/, "JWT_EXPIRES_IN doit ressembler à 30m, 1h, 7d")
+    .default("1h"),
   STORAGE_DRIVER: z.literal("local").default("local"),
   STORAGE_LOCAL_DIR: z.string().min(1).default("storage"),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),

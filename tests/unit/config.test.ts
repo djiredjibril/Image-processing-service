@@ -37,6 +37,11 @@ describe("loadConfig", () => {
     expect(isErr(result) && result.error.some((line) => line.startsWith("JWT_SECRET"))).toBe(true);
   });
 
+  it("valide le format de JWT_EXPIRES_IN", () => {
+    expect(isOk(loadConfig({ ...validEnv, JWT_EXPIRES_IN: "15m" }))).toBe(true);
+    expect(isErr(loadConfig({ ...validEnv, JWT_EXPIRES_IN: "bientôt" }))).toBe(true);
+  });
+
   it("refuse un STORAGE_DRIVER inconnu et un PORT hors bornes", () => {
     expect(isErr(loadConfig({ ...validEnv, STORAGE_DRIVER: "s3" }))).toBe(true);
     expect(isErr(loadConfig({ ...validEnv, PORT: "70000" }))).toBe(true);

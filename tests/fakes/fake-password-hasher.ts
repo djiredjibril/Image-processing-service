@@ -10,4 +10,11 @@ export class FakePasswordHasher implements IPasswordHasher {
     this.received.push(plain);
     return Promise.resolve(PasswordHash.fromHash(`fake-hash:${plain}`));
   }
+
+  readonly verified: string[] = [];
+
+  verify(plain: string, hash: PasswordHash): Promise<boolean> {
+    this.verified.push(plain);
+    return Promise.resolve(hash.reveal() === `fake-hash:${plain}`);
+  }
 }

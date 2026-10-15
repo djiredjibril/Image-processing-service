@@ -24,3 +24,13 @@ export class WeakPasswordError {
 export class EmailAlreadyUsedError {
   readonly kind = "EmailAlreadyUsed" as const;
 }
+
+/**
+ * Identifiants incorrects.
+ *
+ * Volontairement UNIQUE pour « e-mail inconnu » et « mauvais mot de passe » : deux erreurs
+ * distinctes permettraient à un attaquant de savoir quels e-mails ont un compte (énumération).
+ */
+export class InvalidCredentialsError {
+  readonly kind = "InvalidCredentials" as const;
+}

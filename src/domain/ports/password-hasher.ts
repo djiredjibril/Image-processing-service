@@ -19,4 +19,14 @@ export interface IPasswordHasher {
    * @returns L'empreinte à stocker. Ne lève pas d'erreur métier.
    */
   hash(plain: string): Promise<PasswordHash>;
+
+  /**
+   * Compare un mot de passe en clair à une empreinte stockée.
+   *
+   * @param plain - Mot de passe saisi.
+   * @param hash - Empreinte stockée.
+   * @returns `true` si le mot de passe correspond, `false` sinon. Ne lève pas d'erreur
+   * pour un simple « ne correspond pas ».
+   */
+  verify(plain: string, hash: PasswordHash): Promise<boolean>;
 }
