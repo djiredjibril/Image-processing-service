@@ -96,3 +96,15 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Validation en deux temps** : zod convertit la query string (toujours des chaînes) en nombres avec leurs défauts ;
    le domaine impose les bornes. Piège : `?page=1&page=2` donne un tableau, et `?limit=` donne `0` : tout doit finir en 400.
    Refactor : `ImageSummary` partagé évite de dupliquer la forme publique d'une image entre upload et liste.
+
+### Monorepo (`chore/monorepo-structure`)
+
+1. **npm workspaces** : un `package.json` racine déclare `workspaces: ["apps/*"]` ; `npm install` installe tout en une
+   fois dans un seul `node_modules` partagé (les dépendances communes sont hissées à la racine). Un seul
+   `package-lock.json` pour tout le dépôt.
+2. **Scripts délégués** : `npm run test --workspaces --if-present` lance le script dans chaque application qui le
+   définit ; `-w apps/api` cible un seul workspace. Le répertoire courant devient celui du workspace (d'où les
+   chemins relatifs `db/migrations`, `.env` et `storage/` qui continuent de fonctionner sans modification de code).
+3. **`git mv` conserve l'historique** (`git log --follow`) ; une restructuration doit être un commit à part,
+   sans changement de comportement, avec la même suite de tests verte avant et après (ici : 137 tests).
+4. **Infra partagée à la racine** (`docker-compose.yml`, Postman) : elle ne dépend d'aucune application en particulier.

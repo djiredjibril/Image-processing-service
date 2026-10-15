@@ -146,31 +146,36 @@ Seule la phase marquée "En cours" est autorisée.
 
 ## 9. Structure des dossiers (cible)
 
+Le dépôt est un **monorepo npm workspaces** : `apps/api` (backend, structure ci-dessous),
+`apps/web` (application Angular + Tailwind CSS pour consommer l'API), infra partagée à la
+racine (`docker-compose.yml`, `docker/`, `postman/`). Les commandes se lancent depuis la racine.
+
 ```
-src/
-  domain/
-    entities/            User, Image
-    value-objects/       Email, ImageFormat, ImageDimensions, ...
-    repositories/        IUserRepository, IImageRepository
-    ports/               IFileStorage, IImageProcessor, ITokenService, IPasswordHasher
-    errors/              erreurs métier typées
-  application/
-    use-cases/           un fichier par cas d'usage
-    shared/              Result / Either
-  infrastructure/
-    http/                Express : routes, middlewares, schémas zod, mapping Result → HTTP
-    persistence/         implémentations pg des repositories + migrations runner
-    storage/             LocalFileStorage (puis S3FileStorage)
-    image/               SharpImageProcessor
-    security/            JWT, hachage
-    config/              lecture + validation des variables d'environnement
-  main.ts                composition root (assemblage des dépendances)
-db/migrations/           001_init.sql, 002_...
-tests/
-  unit/                  domaine + use cases (avec fakes en mémoire)
-  integration/           repositories contre PostgreSQL de test, storage sur disque temporaire
-  e2e/                   requêtes HTTP complètes (supertest)
-storage/                 fichiers locaux (ignoré par git)
+apps/api/
+  src/
+    domain/
+      entities/            User, Image
+      value-objects/       Email, ImageFormat, ImageDimensions, ...
+      repositories/        IUserRepository, IImageRepository
+      ports/               IFileStorage, IImageProcessor, ITokenService, IPasswordHasher
+      errors/              erreurs métier typées
+    application/
+      use-cases/           un fichier par cas d'usage
+      shared/              Result / Either
+    infrastructure/
+      http/                Express : routes, middlewares, schémas zod, mapping Result → HTTP
+      persistence/         implémentations pg des repositories + migrations runner
+      storage/             LocalFileStorage (puis S3FileStorage)
+      image/               SharpImageProcessor
+      security/            JWT, hachage
+      config/              lecture + validation des variables d'environnement
+    main.ts                composition root (assemblage des dépendances)
+  db/migrations/           001_init.sql, 002_...
+  tests/
+    unit/                  domaine + use cases (avec fakes en mémoire)
+    integration/           repositories contre PostgreSQL de test, storage sur disque temporaire
+    e2e/                   requêtes HTTP complètes (supertest)
+  storage/                 fichiers locaux (ignoré par git)
 ```
 
 ## 10. Conventions de code
@@ -190,5 +195,9 @@ En fin de phase, un résumé des **concepts appris** est ajouté à `LEARNINGS.m
 
 ## 12. Hors périmètre (pour l'instant)
 
-Frontend, déploiement cloud, paiement, OAuth/social login, import d'image par URL
+Déploiement cloud, paiement, OAuth/social login, import d'image par URL
 (risque SSRF), traitement vidéo, IA/ML sur les images.
+
+> Exception actée après la phase 1 : une **petite application web Angular** (`apps/web`,
+> Tailwind CSS) pour consommer l'API, hors des phases numérotées. Elle reste simple :
+> connexion/inscription, upload, galerie, visualisation. Aucun autre frontend.

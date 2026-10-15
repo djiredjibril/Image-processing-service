@@ -1,7 +1,19 @@
 # Image Processing Service
 
-API backend d'apprentissage (Node.js, TypeScript, Express, PostgreSQL). Voir `CLAUDE.md`
-(source de vérité), `ENGINEERING_RULES.md` (architecture) et `WORKFLOW.md` (cycle de travail).
+API backend d'apprentissage (Node.js, TypeScript, Express, PostgreSQL) et, à venir, une petite
+application web Angular pour la consommer. Voir `CLAUDE.md` (source de vérité),
+`ENGINEERING_RULES.md` (architecture) et `WORKFLOW.md` (cycle de travail).
+
+## Structure du monorepo (npm workspaces)
+
+```
+apps/api/        API Express (code, tests, migrations SQL, .env)
+apps/web/        application Angular (à venir)
+docker-compose.yml, docker/   PostgreSQL local (infra partagée)
+postman/         collection Postman
+```
+
+Toutes les commandes se lancent **depuis la racine** ; elles sont transmises aux workspaces.
 
 ## Prérequis
 
@@ -11,8 +23,8 @@ API backend d'apprentissage (Node.js, TypeScript, Express, PostgreSQL). Voir `CL
 ## Installation
 
 ```bash
-npm install
-cp .env.example .env   # puis adapter les valeurs (JWT_SECRET : au moins 32 caractères)
+npm install                               # installe tous les workspaces
+cp apps/api/.env.example apps/api/.env    # puis adapter (JWT_SECRET : au moins 32 caractères)
 ```
 
 ## Lancer PostgreSQL
@@ -29,18 +41,19 @@ de zéro : `docker compose down -v`.
 ## Migrer, démarrer
 
 ```bash
-npm run migrate   # applique db/migrations/NNN_*.sql sur la base de dev
-npm run dev       # serveur avec rechargement, http://localhost:3001
+npm run migrate   # applique apps/api/db/migrations/NNN_*.sql sur la base de dev
+npm run dev:api   # API avec rechargement, http://localhost:3001
 ```
 
 ## Tests et qualité
 
 ```bash
-npm run test:unit         # domaine / config, sans réseau ni DB
-npm run test:integration  # migrator contre imageservice_test
-npm run test:e2e          # requêtes HTTP (supertest) sur la base de test
-npm test                  # les trois
+npm test                  # unit + integration + E2E de tous les workspaces
 npm run typecheck && npm run lint
+# Un seul niveau de tests de l'API :
+npm run test:unit -w apps/api        # domaine / use cases, sans réseau ni DB
+npm run test:integration -w apps/api # repositories, storage, migrator (imageservice_test)
+npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de test
 ```
 
 ## Endpoints
@@ -65,9 +78,9 @@ La collection est complétée à chaque nouvelle route.
 
 ## Stockage des fichiers
 
-Les images sont écrites sous `STORAGE_LOCAL_DIR` (défaut `storage/`, ignoré par git) avec une clé
+Les images sont écrites sous `STORAGE_LOCAL_DIR` (défaut `storage/`, soit `apps/api/storage/`, ignoré par git) avec une clé
 générée `originals/<uuid>.<ext>` ; le nom de fichier envoyé par le client n'est jamais utilisé.
 
 ## Variables d'environnement
 
-Voir `.env.example`. L'application refuse de démarrer si la configuration est invalide.
+Voir `apps/api/.env.example`. L'application refuse de démarrer si la configuration est invalide.
