@@ -53,6 +53,7 @@ npm run typecheck && npm run lint
 
 | POST | `/images` | Authentifié. Multipart, champ `image` (JPEG, PNG ou WebP ; 10 Mo et 8000 px par côté par défaut). 201 `{ id, format, sizeBytes, width, height, createdAt }`, 400 fichier manquant ou illisible, 401, 413 trop lourd ou trop grand, 415 format non supporté. Le type est vérifié par les magic bytes |
 | GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
+| GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
 
 Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 

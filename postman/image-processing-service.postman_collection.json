@@ -144,6 +144,43 @@
         "url": "{{baseUrl}}/images/{{imageId}}",
         "description": "Renvoie le fichier (flux) avec son Content-Type. 200 | 401 | 404 (image inconnue OU appartenant à un autre utilisateur : jamais 403)."
       }
+    },
+    {
+      "name": "List images",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/images?page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "images"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Liste paginée de TES images, la plus récente d'abord. Défauts : page=1, limit=10 ; limit max 50. 200 { items, page, limit, total } | 400 paramètres hors bornes | 401."
+      }
     }
   ]
 }

@@ -82,3 +82,17 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    `X-Content-Type-Options: nosniff` pour que le navigateur n'interprète pas le fichier autrement.
 5. **Incohérence base/stockage** : si la ligne existe mais que le fichier a disparu, on répond 404 et on LOGGE
    l'anomalie côté serveur : c'est un problème d'exploitation, pas une erreur du client.
+
+### Feature 5 : liste paginée (`feat/p1-list-images`)
+
+1. **Pagination `LIMIT/OFFSET`** : `offset = (page - 1) * limit`. Le plafond (`limit` <= 50) est un invariant du value
+   object `Pagination` : sans lui, un client pourrait demander toute la table. Hors bornes = 400, pas de correction silencieuse.
+2. **Ordre stable** : trier seulement par `created_at` est ambigu si deux lignes ont la même date, et une image
+   peut alors apparaître sur deux pages (ou aucune). On ajoute l'`id` comme critère de départage.
+3. **Total** : le client a besoin de `total` pour calculer le nombre de pages. `count(*)` est un `bigint` que `pg` renvoie
+   en chaîne (pour ne pas perdre de précision) : il faut le convertir. Une page au-delà de la fin renvoie `items: []` mais le bon total.
+4. **Isolation par propriétaire dans la requête** (`WHERE owner_id = $1`), jamais en filtrant en mémoire après coup :
+   le total et les lignes ne fuient rien d'un autre utilisateur. Index `(owner_id, created_at DESC)` pour servir ce tri.
+5. **Validation en deux temps** : zod convertit la query string (toujours des chaînes) en nombres avec leurs défauts ;
+   le domaine impose les bornes. Piège : `?page=1&page=2` donne un tableau, et `?limit=` donne `0` : tout doit finir en 400.
+   Refactor : `ImageSummary` partagé évite de dupliquer la forme publique d'une image entre upload et liste.
