@@ -1,7 +1,9 @@
 /**
  * Type `Result<T, E>` (Ok / Err) pour renvoyer des erreurs typées sans `throw`.
  *
- * Couche : application (partagé). Aucune dépendance externe.
+ * Couche : domaine (partagé). Aucune dépendance externe. Défini ici (et non dans `application`)
+ * car les value objects et les ports du domaine renvoient des `Result` : le domaine ne doit
+ * jamais importer une couche extérieure. `application/shared/result.ts` le ré-exporte.
  */
 
 /** Succès : porte la valeur produite. */
