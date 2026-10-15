@@ -161,3 +161,22 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    taille du résultat est limitée, sinon un client pourrait obtenir une image bien plus grande que la limite. Observé : transformer
    une image de 7000×7000 (49 Mpx) prend ~0,3 s mais le process monte à ~1,1 Go de mémoire. Le traitement est ici synchrone ;
    les phases 4 (file d'attente, concurrence limitée) et 6 (durcissement) devront borner cela.
+
+### Filigrane texte (`feat/p2-watermark`)
+
+1. **Un texte envoyé par l'utilisateur qui finit dans un document SVG est une entrée dangereuse (injection SVG/XML).** Deux défenses
+   cumulées : une LISTE BLANCHE de caractères dans le value object (lettres, chiffres, espace, ponctuation courante : ni `<`, `>`,
+   guillemet double, saut de ligne, ni caractère de contrôle) et l'ÉCHAPPEMENT systématique à l'insertion (`&` en premier pour ne
+   pas doubler les autres entités). Chacune suffit seule à bloquer l'attaque ; on garde les deux (défense en profondeur) et on
+   teste chacune séparément (un test de mutation prouve que retirer l'échappement fait échouer le test).
+2. **Compter des caractères, ce n'est pas compter des octets ni des points de code.** « é » peut être un caractère ou deux points
+   de code (e + accent combiné). `Intl.Segmenter` compte les caractères visibles (graphèmes) ; `[...texte].length` est piégeux.
+3. **La taille finale n'est connue qu'après le calcul du pipeline** (rotation, resize...). Pour dimensionner le calque, on matérialise
+   d'abord l'image en pixels bruts (sans perte), puis on superpose le SVG aux dimensions exactes. Coût : un tampon de plus en
+   mémoire, seulement quand un filigrane est demandé.
+4. **Ordre : le filigrane vient après resize et filtre.** Après le resize, sa taille suit l'image finale ; après le filtre, il
+   garde sa couleur (un sépia ne le teinte pas). Un test de pixels sur fond noir (tout pixel clair vient du filigrane) vérifie la
+   position, l'opacité et l'ordre.
+5. **Dépendance cachée : les polices.** `sharp` dessine le texte du SVG avec les polices du système ; ça marche sur ce Mac, mais un
+   serveur minimal (conteneur sans police) peut ne rien afficher. À vérifier avant tout déploiement. Le texte est réduit pour tenir
+   dans la largeur de l'image, sans descendre sous une taille minimale lisible.

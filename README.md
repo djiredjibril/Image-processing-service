@@ -82,7 +82,7 @@ npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de
 | POST | `/images` | Authentifié. Multipart, champ `image` (JPEG, PNG ou WebP ; 10 Mo et 8000 px par côté par défaut). 201 `{ id, format, sizeBytes, width, height, createdAt }`, 400 fichier manquant ou illisible, 401, 413 trop lourd ou trop grand, 415 format non supporté. Le type est vérifié par les magic bytes |
 | GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
 | GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
-| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). 201 `{ id, originalId, format, sizeBytes, width, height, createdAt }`, 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur) |
+| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). 201 `{ id, originalId, format, sizeBytes, width, height, createdAt }`, 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur) |
 
 Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 
@@ -100,11 +100,17 @@ fichier envoyé par le client n'est jamais utilisé.
 
 ## Transformations d'images
 
-Ordre d'application, fixe : orientation EXIF → crop → rotate → flip → mirror → resize → filtre → format et
-qualité. Le crop s'exprime donc dans les coordonnées de l'image source (après orientation). Les métadonnées
+Ordre d'application, fixe : orientation EXIF → crop → rotate → flip → mirror → resize → filtre → filigrane → format
+et qualité. Le crop s'exprime donc dans les coordonnées de l'image source (après orientation). Les métadonnées
 (EXIF, GPS) sont supprimées du résultat. Les coins vides d'une rotation libre sont transparents (PNG, WebP) ou
 blancs (JPEG). Transformer un dérivé est permis : le nouveau dérivé garde `originalId` pointant vers l'original
-racine. Les dérivés apparaissent dans `GET /images`. Le résultat ne peut pas dépasser `MAX_IMAGE_PIXELS_SIDE`
+racine. Les dérivés apparaissent dans `GET /images`.
+
+**Filigrane** : `watermark: { text, position?, opacity? }`. Texte de 1 à 30 caractères, limité à une liste blanche
+(lettres, chiffres, espace et `. , ' : ; ! ? @ # & ( ) © _ -`) ; `position` : `center`, `top-left`, `top-right`,
+`bottom-left`, `bottom-right` (défaut) ; `opacity` de 0,1 à 1 (défaut 0,5). Le texte est blanc avec un contour sombre,
+sa taille suit l'image finale. Il est rendu par `sharp` à partir d'un SVG (texte échappé) : **le rendu dépend des
+polices du système** (`sans-serif` gras) ; sur un serveur sans police installée, le texte pourrait ne pas s'afficher. Le résultat ne peut pas dépasser `MAX_IMAGE_PIXELS_SIDE`
 par côté (ajouter un `resize`).
 
 ## Variables d'environnement
