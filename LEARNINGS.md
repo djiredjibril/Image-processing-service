@@ -50,3 +50,21 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    lever une erreur pour un jeton invalide (un jeton invalide est un cas normal, pas une panne).
 5. **Middleware** : lit `Authorization: Bearer`, place l'identité dans `req.auth` (augmentation de
    type Express), répond 401 + `WWW-Authenticate: Bearer`. Il ne logge jamais le jeton.
+
+### Feature 3 : upload d'image (`feat/p1-upload-image`)
+
+1. **Magic bytes** : l'extension et le `Content-Type` viennent du client, donc falsifiables. Le vrai type se lit
+   dans les premiers octets (JPEG `FF D8 FF`, PNG `89 50 4E 47…`, WebP `RIFF….WEBP`), puis le décodeur confirme.
+2. **Deux limites, deux protections** : le poids (413, borné dès la lecture par multer) protège le réseau et la RAM
+   de transit ; les dimensions protègent contre les « decompression bombs » (un petit PNG qui décode en Go de
+   pixels). `sharp.metadata()` ne lit que l'en-tête, sans décoder les pixels. 413 pour les dimensions : requête
+   bien formée mais ressource trop grande, comme pour le poids.
+3. **Compensation (saga locale)** : disque et base n'ont pas de transaction commune. On écrit le fichier, puis la
+   ligne ; si la ligne échoue, on supprime le fichier et on relance l'erreur. Sinon : fichier orphelin. Le nettoyage
+   est « au mieux » : son échec ne doit pas masquer l'erreur d'origine.
+4. **Clés de stockage générées** : `originals/<uuid>.<ext>` ; jamais le nom du client (path traversal, collisions).
+   `LocalFileStorage` écrit avec le drapeau `wx` (jamais d'écrasement : l'original est immuable) et vérifie que le
+   chemin résolu reste dans la racine (défense en profondeur).
+5. **Détails qui piègent** : l'orientation EXIF inverse largeur et hauteur d'une photo de téléphone (on lit les
+   dimensions après orientation) ; l'authentification passe AVANT multer pour ne pas lire le fichier d'un inconnu ;
+   multer en `memoryStorage` garde le fichier en RAM, d'où la limite de poids.
