@@ -1,0 +1,62 @@
+{
+  "info": {
+    "name": "Image Processing Service",
+    "description": "Collection Postman du projet. Lancer d'abord POST /register puis POST /login : le jeton est enregistré automatiquement dans la variable `token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3001" },
+    { "key": "email", "value": "salut@example.com" },
+    { "key": "password", "value": "motdepasse123" },
+    { "key": "token", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "description": "200 si l'API et la base répondent, 503 sinon."
+      }
+    },
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "201 { id, email } | 400 validation ou JSON malformé | 409 e-mail déjà pris."
+      }
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('token', pm.response.json().token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [{ "key": "Content-Type", "value": "application/json" }],
+        "url": "{{baseUrl}}/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "200 { token } (stocké dans la variable `token`) | 400 validation | 401 identifiants incorrects."
+      }
+    }
+  ]
+}

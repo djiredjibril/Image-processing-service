@@ -53,6 +53,12 @@ npm run typecheck && npm run lint
 
 Les routes protégées (à venir) attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 
+## Postman
+
+Importer `postman/image-processing-service.postman_collection.json`. Lancer `Register` puis
+`Login` : le jeton est stocké dans la variable `token` pour les futures routes protégées.
+La collection est complétée à chaque nouvelle route.
+
 ## Variables d'environnement
 
 Voir `.env.example`. L'application refuse de démarrer si la configuration est invalide.
