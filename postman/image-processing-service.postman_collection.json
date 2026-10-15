@@ -1,0 +1,186 @@
+{
+  "info": {
+    "name": "Image Processing Service",
+    "description": "Collection Postman du projet. Lancer d'abord POST /register puis POST /login : le jeton est enregistré automatiquement dans la variable `token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "email",
+      "value": "salut@example.com"
+    },
+    {
+      "key": "password",
+      "value": "motdepasse123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "imageId",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "description": "200 si l'API et la base répondent, 503 sinon."
+      }
+    },
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "201 { id, email } | 400 validation ou JSON malformé | 409 e-mail déjà pris."
+      }
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('token', pm.response.json().token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "200 { token } (stocké dans la variable `token`) | 400 validation | 401 identifiants incorrects."
+      }
+    },
+    {
+      "name": "Upload image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "image",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté. L'id de l'image créée est enregistré dans la variable `imageId`."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('imageId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get image",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}",
+        "description": "Renvoie le fichier (flux) avec son Content-Type. 200 | 401 | 404 (image inconnue OU appartenant à un autre utilisateur : jamais 403)."
+      }
+    },
+    {
+      "name": "List images",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/images?page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "images"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Liste paginée de TES images, la plus récente d'abord. Défauts : page=1, limit=10 ; limit max 50. 200 { items, page, limit, total } | 400 paramètres hors bornes | 401."
+      }
+    }
+  ]
+}

@@ -6,8 +6,19 @@
 import "dotenv/config";
 import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
+import { GetImage } from "./application/use-cases/get-image.js";
+import { ListImages } from "./application/use-cases/list-images.js";
+import { LoginUser } from "./application/use-cases/login-user.js";
+import { RegisterUser } from "./application/use-cases/register-user.js";
+import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createApp } from "./infrastructure/http/app.js";
+import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
 import { createPool } from "./infrastructure/persistence/database.js";
+import { PgImageRepository } from "./infrastructure/persistence/pg-image-repository.js";
+import { PgUserRepository } from "./infrastructure/persistence/pg-user-repository.js";
+import { LocalFileStorage } from "./infrastructure/storage/local-file-storage.js";
+import { JwtTokenService } from "./infrastructure/security/jwt-token-service.js";
+import { Argon2PasswordHasher } from "./infrastructure/security/argon2-password-hasher.js";
 
 const config = loadConfig(process.env);
 if (isErr(config)) {
@@ -16,7 +27,27 @@ if (isErr(config)) {
 }
 
 const pool = createPool(config.value.DATABASE_URL);
-const app = createApp({ pool });
+const users = new PgUserRepository(pool);
+const hasher = new Argon2PasswordHasher();
+const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
+const storage = new LocalFileStorage(config.value.STORAGE_LOCAL_DIR);
+const images = new PgImageRepository(pool);
+const uploadImage = new UploadImage(
+  storage,
+  new SharpImageProcessor(),
+  images,
+  { maxBytes: config.value.MAX_UPLOAD_BYTES, maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
+);
+const app = createApp({
+  pool,
+  registerUser: new RegisterUser(users, hasher),
+  loginUser: new LoginUser(users, hasher, tokens),
+  uploadImage,
+  getImage: new GetImage(images, storage),
+  listImages: new ListImages(images),
+  tokens,
+  maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
+});
 
 const server = app.listen(config.value.PORT, () => {
   console.log(`Serveur démarré sur le port ${String(config.value.PORT)}`);

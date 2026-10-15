@@ -48,6 +48,25 @@ npm run typecheck && npm run lint
 | Méthode | Route | Description |
 |---|---|---|
 | GET | `/health` | 200 si l'app et la base répondent, 503 si la base est injoignable |
+| POST | `/register` | Corps `{ email, password }` (mot de passe : 8 caractères min.). 201 `{ id, email }` (jamais le hash), 400 validation / JSON malformé, 409 e-mail déjà pris |
+| POST | `/login` | Corps `{ email, password }`. 200 `{ token }` (JWT), 400 validation, 401 identifiants incorrects (même réponse pour e-mail inconnu et mauvais mot de passe) |
+
+| POST | `/images` | Authentifié. Multipart, champ `image` (JPEG, PNG ou WebP ; 10 Mo et 8000 px par côté par défaut). 201 `{ id, format, sizeBytes, width, height, createdAt }`, 400 fichier manquant ou illisible, 401, 413 trop lourd ou trop grand, 415 format non supporté. Le type est vérifié par les magic bytes |
+| GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
+| GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
+
+Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
+
+## Postman
+
+Importer `postman/image-processing-service.postman_collection.json`. Lancer `Register` puis
+`Login` : le jeton est stocké dans la variable `token` pour les futures routes protégées.
+La collection est complétée à chaque nouvelle route.
+
+## Stockage des fichiers
+
+Les images sont écrites sous `STORAGE_LOCAL_DIR` (défaut `storage/`, ignoré par git) avec une clé
+générée `originals/<uuid>.<ext>` ; le nom de fichier envoyé par le client n'est jamais utilisé.
 
 ## Variables d'environnement
 

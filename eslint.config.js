@@ -29,6 +29,7 @@ export default tseslint.config(
         "error",
         {
           publicOnly: true,
+          checkConstructors: false,
           require: { FunctionDeclaration: true, ClassDeclaration: true, MethodDefinition: true, ArrowFunctionExpression: false },
           contexts: ["TSInterfaceDeclaration", "TSTypeAliasDeclaration", "TSMethodSignature"],
         },

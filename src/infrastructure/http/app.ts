@@ -6,11 +6,30 @@
  */
 import express, { type Express } from "express";
 import type pg from "pg";
+import type { GetImage } from "../../application/use-cases/get-image.js";
+import type { ListImages } from "../../application/use-cases/list-images.js";
+import type { LoginUser } from "../../application/use-cases/login-user.js";
+import type { RegisterUser } from "../../application/use-cases/register-user.js";
+import type { UploadImage } from "../../application/use-cases/upload-image.js";
+import type { ITokenService } from "../../domain/ports/token-service.js";
+import { createAuthMiddleware } from "./auth-middleware.js";
 import { errorHandler } from "./error-handler.js";
+import { createGetImageRouter } from "./routes/get-image-route.js";
+import { createListImagesRouter } from "./routes/list-images-route.js";
+import { createLoginRouter } from "./routes/login-route.js";
+import { createRegisterRouter } from "./routes/register-route.js";
+import { createUploadRouter } from "./routes/upload-image-route.js";
 
 /** Dépendances nécessaires à la construction de l'application HTTP. */
 export interface AppDependencies {
   readonly pool: pg.Pool;
+  readonly registerUser: RegisterUser;
+  readonly loginUser: LoginUser;
+  readonly uploadImage: UploadImage;
+  readonly getImage: GetImage;
+  readonly listImages: ListImages;
+  readonly tokens: ITokenService;
+  readonly maxUploadBytes: number;
 }
 
 /**
@@ -24,6 +43,8 @@ export interface AppDependencies {
  */
 export function createApp(deps: AppDependencies): Express {
   const app = express();
+  // Limite la taille du corps JSON : protège la mémoire contre les envois démesurés.
+  app.use(express.json({ limit: "100kb" }));
 
   app.get("/health", async (_req, res) => {
     try {
@@ -35,6 +56,13 @@ export function createApp(deps: AppDependencies): Express {
       res.status(503).json({ status: "error", database: "down" });
     }
   });
+
+  app.use(createRegisterRouter(deps.registerUser));
+  app.use(createLoginRouter(deps.loginUser));
+  const authenticate = createAuthMiddleware(deps.tokens);
+  app.use(createUploadRouter(deps.uploadImage, authenticate, deps.maxUploadBytes));
+  app.use(createGetImageRouter(deps.getImage, authenticate));
+  app.use(createListImagesRouter(deps.listImages, authenticate));
 
   app.use(errorHandler);
   return app;
