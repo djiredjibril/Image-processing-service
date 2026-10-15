@@ -8,7 +8,7 @@ import { ImagesService } from '../../core/images/images.service';
 import { Gallery, GALLERY_PAGE_SIZE } from './gallery';
 
 function summary(id: string): ImageSummary {
-  return { id, format: 'png', sizeBytes: 100, width: 10, height: 10, createdAt: '2026-01-01T10:00:00.000Z' };
+  return { id, originalId: null, format: 'png', sizeBytes: 100, width: 10, height: 10, createdAt: '2026-01-01T10:00:00.000Z' };
 }
 
 describe('Gallery', () => {

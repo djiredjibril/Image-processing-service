@@ -8,6 +8,8 @@ import type { Image } from "../../domain/entities/image.js";
 /** Métadonnées publiques d'une image. */
 export interface ImageSummary {
   readonly id: string;
+  /** `null` pour un original ; identifiant de l'original pour une image dérivée. */
+  readonly originalId: string | null;
   readonly format: string;
   readonly sizeBytes: number;
   readonly width: number;
@@ -24,6 +26,7 @@ export interface ImageSummary {
 export function toImageSummary(image: Image): ImageSummary {
   return {
     id: image.id,
+    originalId: image.originalId,
     format: image.format.name,
     sizeBytes: image.size.bytes,
     width: image.dimensions.width,

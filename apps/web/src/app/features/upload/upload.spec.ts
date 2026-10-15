@@ -60,7 +60,7 @@ describe('Upload', () => {
   });
 
   it("envoie le fichier puis ouvre l'image créée", async () => {
-    upload.mockReturnValue(of({ id: 'nouvelle', format: 'png', sizeBytes: 3, width: 1, height: 1, createdAt: '' }));
+    upload.mockReturnValue(of({ id: 'nouvelle', originalId: null, format: 'png', sizeBytes: 3, width: 1, height: 1, createdAt: '' }));
     const { choose, send } = await render();
     await choose(png());
     await send();

@@ -7,6 +7,8 @@
 /** Métadonnées publiques d'une image (jamais la clé de stockage interne). */
 export interface ImageSummary {
   readonly id: string;
+  /** `null` pour un original ; identifiant de l'original pour une image dérivée (résultat d'une transformation). */
+  readonly originalId: string | null;
   readonly format: 'jpeg' | 'png' | 'webp';
   readonly sizeBytes: number;
   readonly width: number;

@@ -38,7 +38,7 @@ describe('ImagesService', () => {
     const body = request.request.body as FormData;
     expect(body).toBeInstanceOf(FormData);
     expect((body.get('image') as File).name).toBe('photo.png');
-    request.flush({ id: 'i1', format: 'png', sizeBytes: 3, width: 1, height: 1, createdAt: '2026-01-01T00:00:00.000Z' });
+    request.flush({ id: 'i1', originalId: null, format: 'png', sizeBytes: 3, width: 1, height: 1, createdAt: '2026-01-01T00:00:00.000Z' });
   });
 
   it('download demande le fichier en blob', () => {

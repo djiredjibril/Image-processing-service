@@ -57,7 +57,7 @@ describe("ListImages", () => {
 
   it("n'expose jamais la clé de stockage ni le propriétaire", async () => {
     const result = await useCase.execute({ ownerId: "bob", page: 1, limit: 10 });
-    expect(isOk(result) && Object.keys(result.value.items[0] ?? {}).sort()).toEqual(["createdAt", "format", "height", "id", "sizeBytes", "width"]);
+    expect(isOk(result) && Object.keys(result.value.items[0] ?? {}).sort()).toEqual(["createdAt", "format", "height", "id", "originalId", "sizeBytes", "width"]);
   });
 
   it("refuse une pagination hors bornes", async () => {

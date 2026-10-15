@@ -89,7 +89,7 @@ describe("GET /images", () => {
     expect(alice.total).toBe(3);
     expect(bob.total).toBe(2);
     expect(alice.items.map((i) => i.id).sort()).toEqual([...aliceIds].sort());
-    expect(Object.keys(alice.items[0] ?? {}).sort()).toEqual(["createdAt", "format", "height", "id", "sizeBytes", "width"]);
+    expect(Object.keys(alice.items[0] ?? {}).sort()).toEqual(["createdAt", "format", "height", "id", "originalId", "sizeBytes", "width"]);
   });
 
   it("accepte la limite maximale de 50", async () => {

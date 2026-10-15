@@ -27,7 +27,7 @@ describe("UploadImage", () => {
 
     expect(isOk(result)).toBe(true);
     if (!isOk(result)) return;
-    expect(Object.keys(result.value).sort()).toEqual(["createdAt", "format", "height", "id", "sizeBytes", "width"]);
+    expect(Object.keys(result.value).sort()).toEqual(["createdAt", "format", "height", "id", "originalId", "sizeBytes", "width"]);
     expect(result.value).toMatchObject({ format: "jpeg", sizeBytes: JPEG.byteLength, width: 100, height: 50 });
 
     expect([...storage.files.keys()]).toHaveLength(1);

@@ -55,7 +55,7 @@ describe("POST /images", () => {
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({ format: expected, width: 40, height: 20 });
-    expect(Object.keys(res.body as object).sort()).toEqual(["createdAt", "format", "height", "id", "sizeBytes", "width"]);
+    expect(Object.keys(res.body as object).sort()).toEqual(["createdAt", "format", "height", "id", "originalId", "sizeBytes", "width"]);
 
     const files = await storedFiles();
     expect(files).toHaveLength(1);

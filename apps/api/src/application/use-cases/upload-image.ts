@@ -19,6 +19,7 @@ import { ImageDimensions } from "../../domain/value-objects/image-dimensions.js"
 import { ImageFormat } from "../../domain/value-objects/image-format.js";
 import { StorageKey } from "../../domain/value-objects/storage-key.js";
 import { type ImageSummary, toImageSummary } from "../shared/image-summary.js";
+import { storeImage } from "../shared/store-image.js";
 import { err, isErr, ok, type Result } from "../shared/result.js";
 
 /** Limites de validation, issues de la configuration. */
@@ -111,23 +112,8 @@ export class UploadImage {
       dimensions: dimensions.value,
     });
 
-    await this.storage.put(image.storageKey, input.data);
-    try {
-      await this.images.save(image);
-    } catch (error) {
-      await this.removeOrphan(image.storageKey);
-      throw error;
-    }
+    await storeImage(this.storage, this.images, image, input.data);
 
     return ok(toImageSummary(image));
-  }
-
-  /** Nettoyage au mieux : un échec ici ne doit pas masquer l'erreur d'origine. */
-  private async removeOrphan(key: StorageKey): Promise<void> {
-    try {
-      await this.storage.delete(key);
-    } catch (cleanupError) {
-      console.error(`Compensation impossible : fichier orphelin ${key.value}`, cleanupError);
-    }
   }
 }
