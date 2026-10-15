@@ -1,4 +1,4 @@
-# PostgreSQL local de développement. Deux bases : imageservice_dev et imageservice_test.
+# Services locaux de développement : PostgreSQL (bases imageservice_dev et imageservice_test) et Redis (cache, rate limiting).
 services:
   postgres:
     image: postgres:16-alpine
@@ -15,6 +15,18 @@ services:
       - ./docker/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U imageservice -d imageservice_dev"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  redis:
+    image: redis:7-alpine
+    # Port hôte 6380 pour ne pas entrer en conflit avec un Redis déjà présent sur 6379.
+    ports:
+      - "6380:6379"
+    # Cache et compteurs de rate limiting : données jetables, donc aucune persistance sur disque.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
       interval: 5s
       timeout: 3s
       retries: 10
