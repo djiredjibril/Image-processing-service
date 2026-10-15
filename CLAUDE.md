@@ -123,7 +123,7 @@ Codes HTTP corrects (201 création, 400 validation, 401 non authentifié, 404 in
 
 | Phase | Contenu | Statut |
 |---|---|---|
-| 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | En cours |
+| 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | Terminée |
 | 2 | Transformations avec sharp, dérivés stockés | À faire |
 | 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | À faire |
 | 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | À faire |
