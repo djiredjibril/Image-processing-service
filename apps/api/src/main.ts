@@ -13,6 +13,7 @@ import { RegisterUser } from "./application/use-cases/register-user.js";
 import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
+import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
 import { createPool } from "./infrastructure/persistence/database.js";
@@ -56,7 +57,9 @@ const app = createApp({
   uploadImage,
   getImage: new GetImage(images, storage),
   listImages: new ListImages(images),
-  transformImage: new TransformImage(images, storage, processor, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
+  transformImage: new TransformImage(images, storage, processor, new RedisTransformCache(redis, config.value.CACHE_TTL_SECONDS), {
+    maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE,
+  }),
   tokens,
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
   corsOrigin: config.value.CORS_ORIGIN,
