@@ -48,6 +48,7 @@ npm run typecheck && npm run lint
 | Méthode | Route | Description |
 |---|---|---|
 | GET | `/health` | 200 si l'app et la base répondent, 503 si la base est injoignable |
+| POST | `/register` | Corps `{ email, password }` (mot de passe : 8 caractères min.). 201 `{ id, email }` (jamais le hash), 400 validation / JSON malformé, 409 e-mail déjà pris |
 
 ## Variables d'environnement
 
