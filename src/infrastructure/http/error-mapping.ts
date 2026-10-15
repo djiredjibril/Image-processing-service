@@ -4,6 +4,7 @@
  * Couche : infrastructure (HTTP). Un seul endroit décide quel code HTTP correspond à
  * quelle erreur du domaine : les routes et les use cases l'ignorent.
  */
+import type { InvalidCredentialsError } from "../../domain/errors/user-errors.js";
 import type { RegisterUserError } from "../../application/use-cases/register-user.js";
 
 /** Réponse HTTP d'erreur : statut + corps JSON. */
@@ -27,4 +28,14 @@ export function registerErrorToHttp(error: RegisterUserError): HttpError {
     case "EmailAlreadyUsed":
       return { status: 409, body: { error: error.kind, message: "Un compte existe déjà avec cet e-mail" } };
   }
+}
+
+/**
+ * Convertit l'erreur de `LoginUser` en réponse HTTP.
+ *
+ * @param error - Erreur métier renvoyée par le use case.
+ * @returns Toujours 401 avec un message volontairement vague (pas d'indice sur le compte).
+ */
+export function loginErrorToHttp(error: InvalidCredentialsError): HttpError {
+  return { status: 401, body: { error: error.kind, message: "E-mail ou mot de passe incorrect" } };
 }

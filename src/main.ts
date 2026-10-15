@@ -6,10 +6,12 @@
 import "dotenv/config";
 import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
+import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { createPool } from "./infrastructure/persistence/database.js";
 import { PgUserRepository } from "./infrastructure/persistence/pg-user-repository.js";
+import { JwtTokenService } from "./infrastructure/security/jwt-token-service.js";
 import { Argon2PasswordHasher } from "./infrastructure/security/argon2-password-hasher.js";
 
 const config = loadConfig(process.env);
@@ -19,8 +21,14 @@ if (isErr(config)) {
 }
 
 const pool = createPool(config.value.DATABASE_URL);
-const registerUser = new RegisterUser(new PgUserRepository(pool), new Argon2PasswordHasher());
-const app = createApp({ pool, registerUser });
+const users = new PgUserRepository(pool);
+const hasher = new Argon2PasswordHasher();
+const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
+const app = createApp({
+  pool,
+  registerUser: new RegisterUser(users, hasher),
+  loginUser: new LoginUser(users, hasher, tokens),
+});
 
 const server = app.listen(config.value.PORT, () => {
   console.log(`Serveur démarré sur le port ${String(config.value.PORT)}`);
