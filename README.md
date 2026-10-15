@@ -83,4 +83,5 @@ générée `originals/<uuid>.<ext>` ; le nom de fichier envoyé par le client n'
 
 ## Variables d'environnement
 
-Voir `apps/api/.env.example`. L'application refuse de démarrer si la configuration est invalide.
+Voir `apps/api/.env.example`. `CORS_ORIGIN` (défaut `http://localhost:4200`) est l'unique origine
+navigateur autorisée à appeler l'API : une origine exacte, jamais `*`. L'application refuse de démarrer si la configuration est invalide.

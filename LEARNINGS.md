@@ -108,3 +108,16 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 3. **`git mv` conserve l'historique** (`git log --follow`) ; une restructuration doit être un commit à part,
    sans changement de comportement, avec la même suite de tests verte avant et après (ici : 137 tests).
 4. **Infra partagée à la racine** (`docker-compose.yml`, Postman) : elle ne dépend d'aucune application en particulier.
+
+### CORS (`feat/api-cors`)
+
+1. **Origine = schéma + hôte + port.** `http://localhost:4200` (Angular) et `http://localhost:3001` (API) sont deux origines
+   différentes : le navigateur bloque la lecture de la réponse tant que l'API ne l'autorise pas explicitement (CORS).
+2. **CORS protège l'utilisateur dans le navigateur, pas l'API.** Curl ou un autre serveur ignorent CORS : l'API reste
+   protégée par son authentification (un test le vérifie : 401 même depuis l'origine autorisée).
+3. **Requête « preflight »** : avant un POST avec en-tête `Authorization`, le navigateur envoie un `OPTIONS` SANS jeton
+   pour demander la permission. Le middleware CORS doit donc passer AVANT l'authentification, sinon il serait refusé en 401.
+4. **Liste blanche stricte** : une seule origine exacte (jamais `*`, validée au démarrage), méthodes `GET`/`POST`,
+   en-têtes `Authorization`/`Content-Type`, `Vary: Origin`. Pas de `credentials` : l'API utilise un jeton Bearer, pas de cookie.
+5. **Piège de la bibliothèque** : avec `origin: "<chaîne>"`, `cors` renvoie TOUJOURS cette origine, même à un tiers (le
+   navigateur bloque quand même). Une fonction de comparaison stricte ne renvoie aucun en-tête aux origines inconnues.
