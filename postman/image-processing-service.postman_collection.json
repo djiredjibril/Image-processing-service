@@ -24,6 +24,10 @@
     {
       "key": "imageId",
       "value": ""
+    },
+    {
+      "key": "derivedId",
+      "value": ""
     }
   ],
   "item": [
@@ -180,6 +184,47 @@
           ]
         },
         "description": "Liste paginée de TES images, la plus récente d'abord. Défauts : page=1, limit=10 ; limit max 50. 200 { items, page, limit, total } | 400 paramètres hors bornes | 401."
+      }
+    },
+    {
+      "name": "Transform image",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('derivedId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}/transform",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"crop\": { \"x\": 0, \"y\": 0, \"width\": 200, \"height\": 200 },\n  \"rotate\": 90,\n  \"flip\": false,\n  \"mirror\": true,\n  \"resize\": { \"width\": 300, \"fit\": \"inside\" },\n  \"filter\": \"sepia\",\n  \"format\": \"webp\",\n  \"quality\": 80\n}"
+        },
+        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}."
       }
     }
   ]

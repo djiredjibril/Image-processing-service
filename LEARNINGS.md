@@ -139,3 +139,25 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Signals + mode sans zone** : l'état (`signal`, `computed`) pilote l'affichage sans `zone.js` ; un `effect` avec
    `onCleanup` gère le téléchargement annulable. Le contrôle de fichier côté navigateur (type, poids) n'est qu'un
    confort : l'API revérifie tout (magic bytes, poids, dimensions). Tailwind v4 se branche via PostCSS (`@import 'tailwindcss'`).
+
+### Transformations d'images (`feat/p2-transform-image`)
+
+1. **L'ordre des opérations change le résultat.** Recadrer puis tourner n'est pas tourner puis recadrer (les coordonnées du crop
+   ne désignent pas la même zone). L'ordre est fixé et documenté : orientation EXIF → crop → rotate → flip → mirror → resize →
+   filtre → encodage. Avec `sharp`, c'est l'ordre des appels qui compte ; on l'a vérifié avec de vrais pixels (image à quatre
+   quadrants colorés : « le rouge passe en haut à droite après une rotation de 90° horaire »), pas seulement avec des tailles.
+2. **L'original est immuable, la transformation est une nouvelle ressource.** Le dérivé a sa propre ligne (`original_id`), son
+   propre fichier (`derived/<uuid>.<ext>`), et la même compensation que l'upload (fichier supprimé si la base échoue,
+   factorisée dans `storeImage`). Un dérivé de dérivé pointe vers l'ORIGINAL racine : on retrouve toujours la source d'origine.
+3. **Valider en couches.** zod contrôle la forme (types, champs inconnus refusés avec `strictObject`) ; les value objects
+   contrôlent les bornes et les valeurs autorisées ; `TransformationSet.checkAgainst` contrôle la cohérence avec l'image
+   (crop dans l'image, qualité inutile pour un PNG) ; le résultat est contrôlé en sortie (taille maximale).
+4. **Piège JPEG et transparence.** Le JPEG n'a pas de canal alpha. Les coins vides d'une rotation libre sortaient NOIRS : `sharp`
+   aplatit avant d'agrandir le canevas, donc le fond transparent était supprimé à l'encodage. Correction : un fond blanc opaque
+   dès le départ quand la sortie est JPEG. Un test sur les pixels l'a révélé ; la tolérance de couleur doit rester large
+   (le JPEG est avec perte : le blanc dérive près des zones colorées) mais très loin du noir.
+5. **Sécurité des images.** L'EXIF (donc le GPS) est supprimé : on applique d'abord l'orientation, sinon la photo se retrouverait
+   couchée, puis `sharp` ne conserve aucune métadonnée. Une rotation à 45° agrandit le canevas (jusqu'à ×1,41 par côté) : la
+   taille du résultat est limitée, sinon un client pourrait obtenir une image bien plus grande que la limite. Observé : transformer
+   une image de 7000×7000 (49 Mpx) prend ~0,3 s mais le process monte à ~1,1 Go de mémoire. Le traitement est ici synchrone ;
+   les phases 4 (file d'attente, concurrence limitée) et 6 (durcissement) devront borner cela.
