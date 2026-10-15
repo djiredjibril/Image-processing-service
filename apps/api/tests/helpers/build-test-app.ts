@@ -1,5 +1,6 @@
 /** Aide de test : assemble l'app Express complète avec les vraies implémentations. */
 import type { Express } from "express";
+import type { Redis } from "ioredis";
 import type pg from "pg";
 import { GetImage } from "../../src/application/use-cases/get-image.js";
 import { ListImages } from "../../src/application/use-cases/list-images.js";
@@ -7,6 +8,7 @@ import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { TransformImage } from "../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
+import { createRedisClient } from "../../src/infrastructure/cache/redis-client.js";
 import { createApp } from "../../src/infrastructure/http/app.js";
 import { SharpImageProcessor } from "../../src/infrastructure/image/sharp-image-processor.js";
 import { PgImageRepository } from "../../src/infrastructure/persistence/pg-image-repository.js";
@@ -14,6 +16,7 @@ import { PgUserRepository } from "../../src/infrastructure/persistence/pg-user-r
 import { JwtTokenService } from "../../src/infrastructure/security/jwt-token-service.js";
 import { Argon2PasswordHasher } from "../../src/infrastructure/security/argon2-password-hasher.js";
 import { LocalFileStorage } from "../../src/infrastructure/storage/local-file-storage.js";
+import { testRedisUrl } from "./test-redis.js";
 
 /** Secret de signature utilisé uniquement dans les tests. */
 export const TEST_JWT_SECRET = "test-secret-test-secret-test-secret-1234";
@@ -26,6 +29,8 @@ export interface TestAppOptions {
   readonly maxPixelsSide?: number;
   /** Origine CORS autorisée (défaut : celle de l'app Angular en dev). */
   readonly corsOrigin?: string;
+  /** Client Redis ; par défaut un client « paresseux » qui ne se connecte jamais tant qu'on ne l'utilise pas. */
+  readonly redis?: Redis;
 }
 
 /** Construit l'application avec la base de test fournie (limites par défaut : 10 Mo, 8000 px). */
@@ -41,6 +46,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const uploadImage = new UploadImage(storage, processor, images, { maxBytes: maxUploadBytes, maxPixelsSide });
   return createApp({
     pool,
+    redis: options.redis ?? createRedisClient(testRedisUrl(), { lazyConnect: true }),
     registerUser: new RegisterUser(users, hasher),
     loginUser: new LoginUser(users, hasher, tokens),
     uploadImage,

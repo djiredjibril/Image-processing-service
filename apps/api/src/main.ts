@@ -12,6 +12,7 @@ import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
 import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
+import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
 import { createPool } from "./infrastructure/persistence/database.js";
@@ -28,6 +29,12 @@ if (isErr(config)) {
 }
 
 const pool = createPool(config.value.DATABASE_URL);
+const redis = createRedisClient(config.value.REDIS_URL);
+// Brève attente : les premières requêtes ne doivent pas rater le cache parce que la connexion n'est pas encore établie.
+// Si Redis est absent, on démarre quand même (cache et rate limiting désactivés, message dans les logs).
+if (!(await waitForRedis(redis, 2000))) {
+  console.warn("Redis injoignable au démarrage : l'API démarre sans cache ni rate limiting");
+}
 const users = new PgUserRepository(pool);
 const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
@@ -43,6 +50,7 @@ const uploadImage = new UploadImage(
 );
 const app = createApp({
   pool,
+  redis,
   registerUser: new RegisterUser(users, hasher),
   loginUser: new LoginUser(users, hasher, tokens),
   uploadImage,
@@ -61,7 +69,13 @@ const server = app.listen(config.value.PORT, () => {
 /** Arrêt propre : on ferme le serveur HTTP puis le pool de connexions. */
 function shutdown(): void {
   server.close(() => {
-    void pool.end().then(() => process.exit(0));
+    // `quit` envoie QUIT puis ferme proprement ; s'il échoue (Redis déjà tombé), on coupe la connexion.
+    void Promise.all([
+      pool.end(),
+      redis.quit().catch(() => {
+        redis.disconnect();
+      }),
+    ]).then(() => process.exit(0));
   });
 }
 process.on("SIGINT", shutdown);

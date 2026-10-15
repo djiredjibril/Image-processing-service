@@ -6,6 +6,7 @@
  */
 import cors from "cors";
 import express, { type Express } from "express";
+import type { Redis } from "ioredis";
 import type pg from "pg";
 import type { GetImage } from "../../application/use-cases/get-image.js";
 import type { ListImages } from "../../application/use-cases/list-images.js";
@@ -15,6 +16,7 @@ import type { TransformImage } from "../../application/use-cases/transform-image
 import type { UploadImage } from "../../application/use-cases/upload-image.js";
 import type { ITokenService } from "../../domain/ports/token-service.js";
 import { createAuthMiddleware } from "./auth-middleware.js";
+import { isRedisUp } from "../cache/redis-client.js";
 import { errorHandler } from "./error-handler.js";
 import { createGetImageRouter } from "./routes/get-image-route.js";
 import { createListImagesRouter } from "./routes/list-images-route.js";
@@ -26,6 +28,8 @@ import { createUploadRouter } from "./routes/upload-image-route.js";
 /** Dépendances nécessaires à la construction de l'application HTTP. */
 export interface AppDependencies {
   readonly pool: pg.Pool;
+  /** Client Redis (cache et rate limiting) : sa panne dégrade le service sans l'interrompre. */
+  readonly redis: Redis;
   readonly registerUser: RegisterUser;
   readonly loginUser: LoginUser;
   readonly uploadImage: UploadImage;
@@ -66,14 +70,16 @@ export function createApp(deps: AppDependencies): Express {
   // Limite la taille du corps JSON : protège la mémoire contre les envois démesurés.
   app.use(express.json({ limit: "100kb" }));
 
+  // PostgreSQL est indispensable (503 s'il tombe) ; Redis est une optimisation : sa panne donne 200 « degraded ».
   app.get("/health", async (_req, res) => {
+    const redis = (await isRedisUp(deps.redis)) ? "up" : "down";
     try {
       await deps.pool.query("SELECT 1");
-      res.status(200).json({ status: "ok", database: "up" });
+      res.status(200).json({ status: redis === "up" ? "ok" : "degraded", database: "up", redis });
     } catch (error) {
       // Panne d'infrastructure : on répond 503 explicite plutôt qu'un 500 générique.
       console.error("Health check : base injoignable", error);
-      res.status(503).json({ status: "error", database: "down" });
+      res.status(503).json({ status: "error", database: "down", redis });
     }
   });
 

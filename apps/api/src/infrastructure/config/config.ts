@@ -25,6 +25,8 @@ const configSchema = z.object({
     .string()
     .regex(/^\d+[smhdw]$/, "JWT_EXPIRES_IN doit ressembler à 30m, 1h, 7d")
     .default("1h"),
+  // Base 0 en développement ; les tests utilisent TEST_REDIS_URL (base 1) pour ne jamais toucher aux données de dev.
+  REDIS_URL: z.string().min(1).default("redis://localhost:6380/0"),
   CORS_ORIGIN: z
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")
