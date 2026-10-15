@@ -5,9 +5,15 @@
  * elles sont renvoyées dans un `Result` et traduites ailleurs.
  */
 import type { ErrorRequestHandler } from "express";
+import multer from "multer";
 
 /** Erreurs de lecture du corps (JSON malformé, corps trop gros) : la faute vient du client. */
 function asClientError(error: unknown): { status: number; code: string; message: string } | null {
+  if (error instanceof multer.MulterError) {
+    return error.code === "LIMIT_FILE_SIZE"
+      ? { status: 413, code: "FileTooLarge", message: "Fichier trop lourd" }
+      : { status: 400, code: "InvalidUpload", message: "Envoi multipart invalide (un seul fichier, champ « image »)" };
+  }
   if (typeof error !== "object" || error === null || !("type" in error)) {
     return null;
   }

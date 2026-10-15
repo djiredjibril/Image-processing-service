@@ -5,6 +5,7 @@
  * quelle erreur du domaine : les routes et les use cases l'ignorent.
  */
 import type { InvalidCredentialsError } from "../../domain/errors/user-errors.js";
+import type { UploadImageError } from "../../application/use-cases/upload-image.js";
 import type { RegisterUserError } from "../../application/use-cases/register-user.js";
 
 /** Réponse HTTP d'erreur : statut + corps JSON. */
@@ -38,4 +39,25 @@ export function registerErrorToHttp(error: RegisterUserError): HttpError {
  */
 export function loginErrorToHttp(error: InvalidCredentialsError): HttpError {
   return { status: 401, body: { error: error.kind, message: "E-mail ou mot de passe incorrect" } };
+}
+
+/**
+ * Convertit une erreur de `UploadImage` en réponse HTTP.
+ *
+ * @param error - Erreur métier renvoyée par le use case.
+ * @returns 413 (poids ou dimensions), 415 (format), 400 (fichier vide ou illisible).
+ */
+export function uploadErrorToHttp(error: UploadImageError): HttpError {
+  switch (error.kind) {
+    case "FileTooLarge":
+      return { status: 413, body: { error: error.kind, message: `Fichier trop lourd (maximum ${String(error.maxBytes)} octets)` } };
+    case "ImageDimensionsTooLarge":
+      return { status: 413, body: { error: error.kind, message: `Image trop grande (maximum ${String(error.maxSide)} px par côté)` } };
+    case "UnsupportedImageFormat":
+      return { status: 415, body: { error: error.kind, message: "Format non supporté : JPEG, PNG ou WebP attendu" } };
+    case "EmptyFile":
+      return { status: 400, body: { error: error.kind, message: "Fichier vide" } };
+    case "CorruptedImage":
+      return { status: 400, body: { error: error.kind, message: `Image illisible : ${error.reason}` } };
+  }
 }

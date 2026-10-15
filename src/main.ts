@@ -8,9 +8,13 @@ import { isErr } from "./application/shared/result.js";
 import { loadConfig } from "./infrastructure/config/config.js";
 import { LoginUser } from "./application/use-cases/login-user.js";
 import { RegisterUser } from "./application/use-cases/register-user.js";
+import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createApp } from "./infrastructure/http/app.js";
+import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
 import { createPool } from "./infrastructure/persistence/database.js";
+import { PgImageRepository } from "./infrastructure/persistence/pg-image-repository.js";
 import { PgUserRepository } from "./infrastructure/persistence/pg-user-repository.js";
+import { LocalFileStorage } from "./infrastructure/storage/local-file-storage.js";
 import { JwtTokenService } from "./infrastructure/security/jwt-token-service.js";
 import { Argon2PasswordHasher } from "./infrastructure/security/argon2-password-hasher.js";
 
@@ -24,10 +28,19 @@ const pool = createPool(config.value.DATABASE_URL);
 const users = new PgUserRepository(pool);
 const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
+const uploadImage = new UploadImage(
+  new LocalFileStorage(config.value.STORAGE_LOCAL_DIR),
+  new SharpImageProcessor(),
+  new PgImageRepository(pool),
+  { maxBytes: config.value.MAX_UPLOAD_BYTES, maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
+);
 const app = createApp({
   pool,
   registerUser: new RegisterUser(users, hasher),
   loginUser: new LoginUser(users, hasher, tokens),
+  uploadImage,
+  tokens,
+  maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
 });
 
 const server = app.listen(config.value.PORT, () => {
