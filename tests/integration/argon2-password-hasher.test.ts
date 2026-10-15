@@ -18,4 +18,10 @@ describe("Argon2PasswordHasher", () => {
     const [a, b] = await Promise.all([hasher.hash("motdepasse"), hasher.hash("motdepasse")]);
     expect(a.reveal()).not.toBe(b.reveal());
   });
+
+  it("verify() accepte le bon mot de passe et refuse le mauvais", async () => {
+    const hash = await hasher.hash("motdepasse");
+    expect(await hasher.verify("motdepasse", hash)).toBe(true);
+    expect(await hasher.verify("autre", hash)).toBe(false);
+  });
 });

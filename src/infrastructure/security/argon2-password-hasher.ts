@@ -16,4 +16,9 @@ export class Argon2PasswordHasher implements IPasswordHasher {
   async hash(plain: string): Promise<PasswordHash> {
     return PasswordHash.fromHash(await argon2.hash(plain, { type: argon2.argon2id }));
   }
+
+  /** Vérifie le mot de passe en temps constant (comparaison faite par argon2). */
+  async verify(plain: string, hash: PasswordHash): Promise<boolean> {
+    return argon2.verify(hash.reveal(), plain);
+  }
 }
