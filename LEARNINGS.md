@@ -68,3 +68,17 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Détails qui piègent** : l'orientation EXIF inverse largeur et hauteur d'une photo de téléphone (on lit les
    dimensions après orientation) ; l'authentification passe AVANT multer pour ne pas lire le fichier d'un inconnu ;
    multer en `memoryStorage` garde le fichier en RAM, d'où la limite de poids.
+
+### Feature 4 : lecture d'une image (`feat/p1-get-image`)
+
+1. **Autorisation par propriétaire = 404, pas 403** : un 403 confirmerait que l'image existe (fuite d'information).
+   Image inconnue, UUID invalide et image d'autrui donnent la même réponse. C'est le use case qui compare `owner_id`.
+2. **Streaming** : on renvoie un flux (`createReadStream` → `pipeline` → réponse) au lieu de lire tout le fichier en
+   mémoire. La RAM utilisée ne dépend plus de la taille du fichier. `pipeline` gère aussi la fermeture des
+   flux et les erreurs en cours d'envoi (après l'envoi des en-têtes, on ne peut plus changer le statut).
+3. **Valider l'identifiant avant la base** : un `id` qui n'est pas un UUID ferait lever une erreur SQL
+   (`invalid input syntax for type uuid`), donc un 500. On le valide (zod) et on répond 404.
+4. **En-têtes de sécurité** : `Content-Type` déduit du format STOCKÉ (pas d'une extension) et
+   `X-Content-Type-Options: nosniff` pour que le navigateur n'interprète pas le fichier autrement.
+5. **Incohérence base/stockage** : si la ligne existe mais que le fichier a disparu, on répond 404 et on LOGGE
+   l'anomalie côté serveur : c'est un problème d'exploitation, pas une erreur du client.

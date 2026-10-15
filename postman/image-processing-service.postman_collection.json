@@ -20,6 +20,10 @@
     {
       "key": "token",
       "value": ""
+    },
+    {
+      "key": "imageId",
+      "value": ""
     }
   ],
   "item": [
@@ -106,7 +110,39 @@
             }
           ]
         },
-        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté."
+        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté. L'id de l'image créée est enregistré dans la variable `imageId`."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('imageId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get image",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}",
+        "description": "Renvoie le fichier (flux) avec son Content-Type. 200 | 401 | 404 (image inconnue OU appartenant à un autre utilisateur : jamais 403)."
       }
     }
   ]
