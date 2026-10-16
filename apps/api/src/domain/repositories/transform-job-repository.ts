@@ -33,6 +33,16 @@ export interface ITransformJobRepository {
   findById(id: string): Promise<TransformJob | null>;
 
   /**
+   * Liste les jobs les plus récents d'un propriétaire.
+   *
+   * @param ownerId - Propriétaire.
+   * @param limit - Nombre maximal de jobs (entier >= 1).
+   * @returns Ses jobs, du plus récent au plus ancien (liste vide s'il n'en a pas).
+   * @throws En cas de panne d'infrastructure.
+   */
+  listRecentByOwner(ownerId: string, limit: number): Promise<readonly TransformJob[]>;
+
+  /**
    * Supprime un job (utilisé pour annuler un job qui n'a pas pu être mis en file).
    *
    * @throws En cas de panne d'infrastructure.

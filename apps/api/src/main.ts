@@ -15,6 +15,10 @@ import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
 import { EnqueueTransformJob } from "./application/use-cases/enqueue-transform-job.js";
 import { GetImageUrl } from "./application/use-cases/get-image-url.js";
+import { GetMonitoringOverview } from "./application/use-cases/get-monitoring-overview.js";
+import { RedisMonitor } from "./infrastructure/cache/redis-monitor.js";
+import { RedisStatsCounters } from "./infrastructure/cache/redis-stats-counters.js";
+import { BullMqQueueMonitor } from "./infrastructure/queue/bullmq-queue-monitor.js";
 import { GetJob } from "./application/use-cases/get-job.js";
 import { createQueueConnection } from "./infrastructure/queue/bull-connection.js";
 import { BullMqTransformJobQueue } from "./infrastructure/queue/bullmq-transform-job-queue.js";
@@ -65,6 +69,8 @@ const jobQueue = new BullMqTransformJobQueue(queueConnection, {
   backoffMs: config.value.QUEUE_BACKOFF_MS,
 });
 const transformJobs = new PgTransformJobRepository(pool);
+const stats = new RedisStatsCounters(redis);
+const queueMonitor = new BullMqQueueMonitor(queueConnection);
 const app = createApp({
   pool,
   redis,
@@ -75,9 +81,11 @@ const app = createApp({
   listImages: new ListImages(images),
   transformImage: new TransformImage(images, storage, processor, new RedisTransformCache(redis, config.value.CACHE_TTL_SECONDS), {
     maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE,
-  }, new LocalWorkSlots(config.value.MAX_CONCURRENT_TRANSFORMS)),
+  }, new LocalWorkSlots(config.value.MAX_CONCURRENT_TRANSFORMS), stats),
   enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, jobQueue, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
   getJob: new GetJob(transformJobs, images),
+  getMonitoringOverview: new GetMonitoringOverview(new RedisMonitor(redis), queueMonitor, stats, transformJobs, images),
+  stats,
   getImageUrl: new GetImageUrl(images, storage, urlSigner, config.value.PRESIGNED_URL_TTL_SECONDS),
   tokens,
   rateLimiter: new RedisRateLimiter(redis),
@@ -108,7 +116,7 @@ function shutdown(): void {
       redis.quit().catch(() => {
         redis.disconnect();
       }),
-      jobQueue.close().then(() => queueConnection.quit()).catch(() => {
+      Promise.all([jobQueue.close(), queueMonitor.close()]).then(() => queueConnection.quit()).catch(() => {
         queueConnection.disconnect();
       }),
     ]).then(() => process.exit(0));

@@ -12,6 +12,7 @@ import {
 } from "../../domain/errors/image-errors.js";
 import type { IFileStorage } from "../../domain/ports/file-storage.js";
 import type { IImageProcessor } from "../../domain/ports/image-processor.js";
+import { type IStatsCounters, NO_STATS } from "../../domain/ports/monitoring.js";
 import { type IWorkSlots, UNLIMITED_WORK_SLOTS } from "../../domain/ports/work-slots.js";
 import type { ITransformCache } from "../../domain/ports/transform-cache.js";
 import type { IImageRepository } from "../../domain/repositories/image-repository.js";
@@ -71,6 +72,7 @@ export class TransformImage {
     private readonly cache: ITransformCache,
     private readonly limits: TransformLimits,
     private readonly slots: IWorkSlots = UNLIMITED_WORK_SLOTS,
+    private readonly stats: IStatsCounters = NO_STATS,
   ) {}
 
   /**
@@ -108,6 +110,7 @@ export class TransformImage {
 
     const cached = await this.findCached(await this.cache.get(key), input.ownerId, rootId);
     if (cached !== null) {
+      void this.stats.increment("cache_hit");
       return ok({ image: cached, cached: true });
     }
 
@@ -118,6 +121,7 @@ export class TransformImage {
       const awaited = lock === null ? await this.cache.waitFor(key, CACHE_WAIT_MS) : await this.cache.get(key);
       const afterWait = await this.findCached(awaited, input.ownerId, rootId);
       if (afterWait !== null) {
+        void this.stats.increment("cache_hit");
         return ok({ image: afterWait, cached: true });
       }
 
@@ -136,6 +140,7 @@ export class TransformImage {
         return err(created.error);
       }
       await this.cache.set(key, created.value.id);
+      void this.stats.increment("cache_miss");
       return ok({ image: created.value, cached: false });
     } finally {
       await lock?.release();

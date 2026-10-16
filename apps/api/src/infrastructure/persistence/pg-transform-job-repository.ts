@@ -55,6 +55,15 @@ export class PgTransformJobRepository implements ITransformJobRepository {
     return row === undefined ? null : toJob(row);
   }
 
+  /** Les `limit` jobs les plus récents du propriétaire (index `owner_id, created_at DESC`). */
+  async listRecentByOwner(ownerId: string, limit: number): Promise<readonly TransformJob[]> {
+    const result = await this.pool.query<JobRow>(
+      `SELECT ${COLUMNS} FROM transform_jobs WHERE owner_id = $1 ORDER BY created_at DESC, id DESC LIMIT $2`,
+      [ownerId, limit],
+    );
+    return result.rows.map(toJob);
+  }
+
   /** Supprime le job (sans effet s'il n'existe pas). */
   async delete(id: string): Promise<void> {
     await this.pool.query("DELETE FROM transform_jobs WHERE id = $1", [id]);

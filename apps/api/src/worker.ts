@@ -11,6 +11,7 @@ import { isErr } from "./application/shared/result.js";
 import { ProcessTransformJob } from "./application/use-cases/process-transform-job.js";
 import { TransformImage } from "./application/use-cases/transform-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
+import { RedisStatsCounters } from "./infrastructure/cache/redis-stats-counters.js";
 import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
 import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
 import { createPool } from "./infrastructure/persistence/database.js";
@@ -40,6 +41,8 @@ const transformImage = new TransformImage(
   processor,
   new RedisTransformCache(cacheRedis, config.value.CACHE_TTL_SECONDS),
   { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
+  undefined, // concurrence déjà bornée par BullMQ (WORKER_CONCURRENCY)
+  new RedisStatsCounters(cacheRedis), // les calculs du worker comptent aussi dans « cache_miss / cache_hit »
 );
 const worker = startTransformWorker(queueRedis, new ProcessTransformJob(new PgTransformJobRepository(pool), transformImage), {
   concurrency: config.value.WORKER_CONCURRENCY,

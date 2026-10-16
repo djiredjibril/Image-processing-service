@@ -33,6 +33,8 @@ export interface RateLimitMiddlewareOptions {
   readonly policy: RateLimitPolicy;
   /** Extrait l'identité à limiter ; `null` si elle est inconnue (la requête n'est alors pas comptée). */
   readonly identify: (req: Request) => string | null;
+  /** Appelé à chaque requête REFUSÉE (429), pour alimenter un compteur d'activité. Ne doit pas lever d'erreur. */
+  readonly onLimited?: () => void;
 }
 
 /**
@@ -61,6 +63,7 @@ export function createRateLimitMiddleware(options: RateLimitMiddlewareOptions): 
       "RateLimit-Reset": String(decision.resetSeconds),
     });
     if (!decision.allowed) {
+      options.onLimited?.();
       res
         .set("Retry-After", String(decision.resetSeconds))
         .status(429)

@@ -9,6 +9,7 @@ import { QueueUnavailableError } from "../../domain/errors/job-errors.js";
 import type { ITransformJobQueue } from "../../domain/ports/transform-job-queue.js";
 import { err, ok, type Result } from "../../domain/shared/result.js";
 import { BULL_PREFIX, TRANSFORM_QUEUE_NAME } from "./bull-connection.js";
+import { whenReady, withTimeout } from "./timeouts.js";
 
 /** Réglages de nouvelle tentative des jobs. */
 export interface RetryOptions {
@@ -29,27 +30,6 @@ export const TRANSFORM_JOB_NAME = "transform";
 /** Durée maximale d'attente d'une connexion Redis non prête, et d'une commande sans réponse, avant de déclarer la file indisponible. */
 const AVAILABILITY_TIMEOUT_MS = 1000;
 const ADD_TIMEOUT_MS = 3000;
-
-/**
- * Attend que la connexion soit prête, au plus `timeoutMs`.
- *
- * Pourquoi : `queue.add` attend LUI-MÊME que la connexion soit prête, sans limite de temps : avec Redis arrêté,
- * l'appel resterait suspendu et la requête HTTP avec lui. On préfère répondre vite (503).
- */
-function whenReady(connection: Redis, timeoutMs: number): Promise<boolean> {
-  if (connection.status === "ready") return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      connection.off("ready", onReady);
-      resolve(false);
-    }, timeoutMs);
-    const onReady = (): void => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    connection.once("ready", onReady);
-  });
-}
 
 /** File BullMQ des transformations (côté producteur : l'API). */
 export class BullMqTransformJobQueue implements ITransformJobQueue {
@@ -108,24 +88,4 @@ export class BullMqTransformJobQueue implements ITransformJobQueue {
   async close(): Promise<void> {
     await this.queue.close();
   }
-}
-
-/** Rejette si la promesse ne se termine pas dans le délai (la promesse d'origine continue en arrière-plan, sans effet). */
-function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
-  promise.catch(() => undefined);
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      reject(new Error("délai dépassé"));
-    }, timeoutMs);
-    promise.then(
-      (value) => {
-        clearTimeout(timer);
-        resolve(value);
-      },
-      (error: unknown) => {
-        clearTimeout(timer);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      },
-    );
-  });
 }
