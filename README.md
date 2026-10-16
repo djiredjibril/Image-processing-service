@@ -50,13 +50,18 @@ npm run dev:web   # application Angular, http://localhost:4200 (dans un second t
 ## Application web (`apps/web`)
 
 Angular 21 (composants standalone, signals, mode sans zone) + Tailwind CSS v4. Pages : connexion,
-inscription, galerie paginée, envoi d'une image, visualisation. Elle appelle l'API sur
+inscription, galerie paginée (les images dérivées portent un badge), envoi d'une image, visualisation, **transformation d'une image** (rotation, retournement,
+miroir, redimensionnement, recadrage, filtre, filigrane, format, qualité), en mode synchrone ou **en arrière-plan** (job BullMQ suivi par « polling » toutes les
+secondes), et **lien de téléchargement temporaire** (URL signée S3). Elle appelle l'API sur
 `http://localhost:3001` (voir `apps/web/src/app/core/api-config.ts`) ; l'API autorise l'origine
 `http://localhost:4200` via `CORS_ORIGIN`. Le jeton JWT est conservé dans `localStorage`
 (compromis d'apprentissage, voir `LEARNINGS.md`).
 
 Les images étant protégées, elles sont téléchargées avec `HttpClient` (en-tête `Authorization`)
 puis affichées via une URL objet : une balise `<img src>` ne peut pas envoyer de jeton.
+
+Les paramètres de transformation sont validés côté navigateur avec les mêmes bornes que l'API (fonction pure `buildTransformBody`), l'API restant l'autorité.
+Le mode « arrière-plan » exige le worker (`npm run worker -w apps/api`) ; sans lui, le job reste « en file d'attente ». Le lien temporaire exige `STORAGE_DRIVER=s3` (sinon l'API répond 501 et le message s'affiche).
 
 > Version d'Angular : 21 (la 22 exige Node >= 24.15 ; le projet est testé avec Node 24.11).
 

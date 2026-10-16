@@ -12,7 +12,7 @@ Table des matières : [0. Comment tester](#0-comment-tester) · [1. Inscription]
 [6. Transformations](#6-transformations-post-imagesidtransform) · [7. Cache Redis](#7-cache-redis) ·
 [8. Rate limiting](#8-rate-limiting-) · [9. BullMQ](#9-file-dattente-bullmq-) · [10. Stockage](#10-stockage) ·
 [11. Santé, CORS, config](#11-santé-cors-configuration) · [12. Durcissement et sécurité](#12-durcissement-et-sécurité) · [13. Les trois niveaux de tests](#13-les-trois-niveaux-de-tests) ·
-[14. Tester soi-même](#14-tester-soi-même)
+[14. Tester soi-même](#14-tester-soi-même) · [15. Application web](#15-application-web-angular)
 
 ---
 
@@ -515,3 +515,41 @@ Deux idées pour **juger la qualité** d'un test :
 9. Avec `RATE_LIMIT_TRANSFORM=2`, faire 3 transformations → la 3e donne `429` + `Retry-After` ; attendre ce délai, ça repasse.
 10. Dans le navigateur (app Angular), ouvrir l'onglet Réseau : les en-têtes `RateLimit-*` sont visibles dans les réponses de l'API.
 11. Phase 6 : relancer l'API avec `TRUST_PROXY=1` et vérifier que `X-Forwarded-For` change alors le compteur (section 12), puis `MAX_CONCURRENT_TRANSFORMS=1` et saturer avec des requêtes parallèles.
+
+## 15. Application web (Angular) ✅
+
+**Implémentation** : `apps/web`. Couche d'accès `core/images/` (`transforms.service.ts` : routes de transformation, jobs, lien temporaire ; `transform-body.ts` : construction et
+validation **pures** du corps ; `transform.models.ts` : contrat JSON), composants `features/image-detail/` (`image-detail.ts`, `transform-panel.ts`) et badge « dérivée » dans la galerie.
+
+**Tests automatisés** (`npm test -w apps/web`, 111 tests) :
+
+| Sujet | Variantes vérifiées |
+|---|---|
+| `buildTransformBody` | formulaire vide refusé ; champs vides omis ; format seul valide ; bornes de la rotation (-360/360, entier), des dimensions (1 à 8000), de la qualité (1-100), de l'opacité (0,1-1), du filigrane (30 caractères visibles, un emoji = 1) ; recadrage « tout ou rien » ; ajustement sans dimension refusé ; toutes les erreurs cumulées |
+| `TransformsService` | POST `/transform` : `201` → `cached: false`, `200` → `cached: true` ; POST `/jobs` ; GET `/jobs/:id` ; GET `/images/:id/url` ; identifiants encodés ; **`pollJob`** : lecture immédiate puis chaque seconde, arrêt APRÈS le statut final (`completed` ou `failed`), abandon après 120 lectures, pas d'empilement de requêtes (`exhaustMap`), arrêt au désabonnement, erreur HTTP propagée |
+| `TransformPanel` | validation SANS appel réseau ; corps envoyé à la bonne image ; résultat avec lien ; « déjà produite » (cache) ; erreur de l'API affichée (ex. 503 « serveur occupé ») puis réessai ; mode arrière-plan : file → traitement → terminé / échec ; attente abandonnée ; création de job refusée (503) ; **suivi arrêté** au changement d'image et à la destruction ; double envoi empêché ; réinitialisation |
+| `ImageDetail` | lien temporaire généré **à la demande** seulement ; durée affichée ; `501` (disque) → message de l'API, pas de lien |
+| `Gallery` | badge « dérivée » sur les dérivés, pas sur les originaux |
+
+**À tester à la main** (3 terminaux, `docker compose up -d --wait` ; l'API sur le port 3001 comme attendu par `api-config.ts`) :
+
+```bash
+PORT=3001 npm run dev -w apps/api        # terminal 1
+npm run worker -w apps/api               # terminal 2 (nécessaire pour le mode « arrière-plan »)
+npm start -w apps/web                    # terminal 3 → http://localhost:4200
+```
+
+1. **Parcours de base** : s'inscrire, se connecter, envoyer une image, ouvrir sa page : le panneau « Transformer cette image » est sous l'image.
+2. **Validation côté navigateur** : cliquer « Appliquer » sans rien remplir → « Choisissez au moins une transformation » ; rotation `999`, qualité `0`, largeur `-5` → les trois erreurs affichées ensemble, **aucune requête** dans l'onglet Réseau.
+3. **Transformation synchrone** : rotation `90` + format `webp` → une ligne « Image créée » avec une miniature ; cliquer dessus ouvre le résultat ; la page du résultat a son propre panneau vide.
+4. **Cache** : refaire exactement la même transformation → « Déjà produite : renvoyée sans recalcul » (réponse `200`, en-tête `X-Cache: HIT` visible dans l'onglet Réseau, et lisible par le navigateur grâce à CORS).
+5. **Arrière-plan** : cocher « Traiter en arrière-plan », rotation `45` + filigrane « Test » → ligne « En file d'attente… » puis « Traitement en cours… » puis « Terminé » avec miniature ; dans l'onglet Réseau, des `GET /jobs/<id>` toutes les secondes qui **s'arrêtent** après la fin.
+6. **Sans worker** : arrêter le worker (terminal 2), lancer un job → reste « En file d'attente… » (et se met à jour tout seul quand on relance le worker, tant que la page reste ouverte et avant 2 minutes) ; après 2 minutes sans fin, le message « Toujours en cours : le traitement continue côté serveur ».
+7. **Changement d'image pendant un suivi** : lancer un job, ouvrir aussitôt un autre résultat : la liste se vide et les `GET /jobs/...` cessent.
+8. **Erreurs de l'API** : recadrage plus grand que l'image → message `400` de l'API ; avec `RATE_LIMIT_TRANSFORM=2`, la 3e demande affiche le `429` ; `docker compose stop redis` puis un job → message `503` « momentanément indisponible », la transformation synchrone fonctionne toujours (sans cache).
+9. **Lien temporaire** : « Générer un lien » → avec `STORAGE_DRIVER=local` le message `501` de l'API ; avec `STORAGE_DRIVER=s3`, une URL `http://localhost:8333/...` valable 300 s à coller dans un navigateur **sans être connecté** (voir section 10).
+10. **Galerie** : les résultats de transformation portent le badge « dérivée ».
+11. **Mobile** : réduire la fenêtre (≈ 400 px) : le formulaire passe en une colonne, rien ne déborde horizontalement.
+
+> Je n'ai pas pu ouvrir un navigateur pendant le développement : la compilation (`ng build`), les 111 tests et les requêtes CORS de pré-vérification (`OPTIONS`) ont été vérifiés, mais **l'aspect visuel et les parcours 3 à 11 sont à valider à l'œil**.
+

@@ -205,3 +205,5 @@ Déploiement cloud, paiement, OAuth/social login, import d'image par URL
 > Exception actée après la phase 1 : une **petite application web Angular** (`apps/web`,
 > Tailwind CSS) pour consommer l'API, hors des phases numérotées. Elle reste simple :
 > connexion/inscription, upload, galerie, visualisation. Aucun autre frontend.
+> Extension actée sur demande explicite du développeur (branche `feat/web-transformations`) : l'application web expose aussi les
+> transformations (synchrones et en arrière-plan avec suivi de job) et le lien de téléchargement temporaire. Rien d'autre.

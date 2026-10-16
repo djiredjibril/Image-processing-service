@@ -325,3 +325,15 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 4. **Le bruit des journaux est un défaut.** Un client qui coupe un téléchargement (`ERR_STREAM_PREMATURE_CLOSE`) n'est pas une erreur serveur ; sous charge chaque téléchargement interrompu produisait une fausse alerte avec sa trace, qui noie les vraies.
 5. **Savoir ce que mesure un chiffre.** `lecture-image` : 24 req/s mais 124 Mo/s : limité par la copie des octets, pas par le serveur. Et c'est exactement ce que les URLs présignées évitent. Les débits très bas du login sont voulus (argon2).
 
+## Application web
+
+### Transformations, jobs et lien temporaire (`feat/web-transformations`)
+
+1. **Valider tôt, côté client, avec une fonction pure.** `buildTransformBody` (sans Angular) transforme le formulaire en corps JSON et refuse ce que l'API refuserait (mêmes bornes), en cumulant les erreurs. Pure = testable en quelques lignes ;
+   le serveur reste l'autorité (la validation du navigateur n'est qu'un confort, jamais une protection).
+2. **Le « polling » avec RxJS.** `timer(0, 1000)` → `exhaustMap(getJob)` → `takeWhile(non final, inclusif)` → `take(120)`. Détails qui comptent : `exhaustMap` (si une réponse tarde, on n'empile pas de requêtes ; `switchMap` les annulerait en boucle),
+   `takeWhile(..., true)` (le statut FINAL est émis avant de s'arrêter), un plafond de lectures (le job continue côté serveur, l'interface le dit), et le désabonnement qui arrête les requêtes.
+3. **Nettoyer ses abonnements.** Un suivi de job doit s'arrêter quand on change d'image ou qu'on quitte la page, sinon il met à jour une liste qui n'existe plus : `effect` + `Subscription` réinitialisée, et `DestroyRef`. Chaque cas a son test (flux à fonction de nettoyage observable).
+4. **Lire le code HTTP, pas seulement le corps.** `observe: 'response'` permet de distinguer `201` (créé) de `200` (déjà produit, cache) : le même corps JSON, deux sens. Le message de l'API (`{ error, message }`) est affiché tel quel : une seule traduction d'erreurs, côté serveur.
+5. **Dire ce qu'on n'a pas vérifié.** Sans navigateur, j'ai vérifié build, tests (111) et pré-vérifications CORS, mais pas l'aspect visuel : c'est écrit noir sur blanc dans le guide de test, avec les parcours à valider à l'œil.
+
