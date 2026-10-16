@@ -100,4 +100,34 @@ describe("loadConfig", () => {
       expect(isErr(loadConfig({ ...s3Env, S3_PUBLIC_ENDPOINT: "pas-une-url" }))).toBe(true);
     });
   });
+
+  describe("durcissement (phase 6)", () => {
+    it("valeurs par défaut sûres : aucun proxy de confiance, 2 transformations simultanées, 10 connexions par e-mail et par 15 min", () => {
+      const result = loadConfig(validEnv);
+      expect(isOk(result)).toBe(true);
+      if (isOk(result)) {
+        expect(result.value).toMatchObject({
+          TRUST_PROXY: 0,
+          MAX_CONCURRENT_TRANSFORMS: 2,
+          RATE_LIMIT_LOGIN_EMAIL: 10,
+          RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS: 900,
+        });
+      }
+    });
+
+    it("TRUST_PROXY est un petit entier (0 à 10) : « true », négatif ou décimal sont refusés", () => {
+      expect(isOk(loadConfig({ ...validEnv, TRUST_PROXY: "1" }))).toBe(true);
+      for (const bad of ["true", "-1", "1.5", "11"]) {
+        expect(isErr(loadConfig({ ...validEnv, TRUST_PROXY: bad }))).toBe(true);
+      }
+    });
+
+    it("MAX_CONCURRENT_TRANSFORMS est borné (1 à 64) et les limites de connexion par e-mail doivent être positives", () => {
+      for (const bad of ["0", "65", "abc"]) expect(isErr(loadConfig({ ...validEnv, MAX_CONCURRENT_TRANSFORMS: bad }))).toBe(true);
+      for (const bad of ["0", "-3"]) {
+        expect(isErr(loadConfig({ ...validEnv, RATE_LIMIT_LOGIN_EMAIL: bad }))).toBe(true);
+        expect(isErr(loadConfig({ ...validEnv, RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS: bad }))).toBe(true);
+      }
+    });
+  });
 });

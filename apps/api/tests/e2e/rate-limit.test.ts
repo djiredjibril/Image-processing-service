@@ -17,6 +17,7 @@ import { createTestRedis, flushTestRedis } from "../helpers/test-redis.js";
 const WINDOW = 60;
 const LIMITS = {
   auth: { limit: 3, windowSeconds: WINDOW },
+  loginEmail: { limit: 1000, windowSeconds: WINDOW },
   upload: { limit: 2, windowSeconds: WINDOW },
   transform: { limit: 2, windowSeconds: WINDOW },
   read: { limit: 3, windowSeconds: WINDOW },

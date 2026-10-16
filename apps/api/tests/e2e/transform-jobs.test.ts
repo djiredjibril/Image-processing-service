@@ -156,7 +156,7 @@ describe("POST /images/:id/jobs et GET /jobs/:id (file factice, sans worker)", (
   });
 
   it("rate limiting : créer un job consomme le MÊME quota « transform » que la transformation synchrone ; le suivi, le quota « read »", async () => {
-    const limits = { auth: { limit: 1000, windowSeconds: 60 }, upload: { limit: 1000, windowSeconds: 60 }, transform: { limit: 2, windowSeconds: 60 }, read: { limit: 3, windowSeconds: 60 } };
+    const limits = { auth: { limit: 1000, windowSeconds: 60 }, loginEmail: { limit: 1000, windowSeconds: 60 }, upload: { limit: 1000, windowSeconds: 60 }, transform: { limit: 2, windowSeconds: 60 }, read: { limit: 3, windowSeconds: 60 } };
     const app = buildTestApp(pool, { storageDir, rateLimiter: new RedisRateLimiter(redis), rateLimits: limits });
     expect((await request(app).post(`/images/${aliceImageId}/jobs`).set(authed(aliceToken)).send({ rotate: 90 })).status).toBe(202);
     expect((await request(app).post(`/images/${aliceImageId}/transform`).set(authed(aliceToken)).send({ rotate: 180 })).status).toBe(201);
