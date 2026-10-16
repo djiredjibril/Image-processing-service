@@ -271,3 +271,20 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Ce que la vérification manuelle a trouvé et que les tests n'avaient pas vu** : le point d'entrée du worker ne chargeait pas le `.env` (les tests n'exécutent
    pas `worker.ts`), et un double `SIGTERM` (relayé par `tsx`) fermait deux fois le pool PostgreSQL et plantait l'arrêt. Lancer vraiment le programme reste indispensable.
 
+## Phase 5
+
+### Stockage objet S3 (`feat/p5-s3-storage`)
+
+1. **Le stockage objet et l'API S3.** Des objets (fichier + métadonnées) rangés par clé dans des buckets, accessibles par le réseau : partagé entre
+   machines, ce que le disque local ne permet pas. S3 est devenu un standard imité par SeaweedFS, Garage, MinIO, R2... : coder contre l'API évite de
+   dépendre d'un fournisseur. Pas de vrais dossiers : `originals/x.png` est UNE clé.
+2. **Le port a payé.** `IFileStorage` existait depuis la phase 1 : `S3FileStorage` s'est ajouté sans toucher un use case ni une route, et une fabrique
+   (`createFileStorage`) choisit l'implémentation, la même pour l'API et le worker. Un test de CONTRAT partagé (disque et S3) prouve l'interchangeabilité.
+3. **Immutabilité atomique.** `If-None-Match: *` (412 si la clé existe) remplace « `exists` puis `put` », qui laissait une course entre deux écritures
+   simultanées. Même idée que le drapeau `wx` du disque ; testé avec 5 écritures simultanées.
+4. **Pièges d'un service tiers.** Une erreur 500 opaque (`No free volumes left`) s'est résolue en lisant les LOGS du service (SeaweedFS réserve ~7 volumes
+   par bucket). Et « healthy » ≠ « prêt » : le healthcheck testait le master mais pas la passerelle S3 ; il teste maintenant le bon port, en `127.0.0.1`
+   (`localhost` peut viser IPv6). L'application réessaie aussi au démarrage.
+5. **Vital, donc fail-closed.** Sans stockage, rien ne marche : on refuse de démarrer plutôt que de démarrer cassé. Les identifiants S3 viennent de
+   l'environnement, ne sont jamais journalisés, et le compte de dev du `docker-compose` n'est valable qu'en local.
+
