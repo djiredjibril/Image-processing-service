@@ -1,0 +1,6 @@
+/* Styles globaux : Tailwind CSS (v4) + fond de page. */
+@import 'tailwindcss';
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}

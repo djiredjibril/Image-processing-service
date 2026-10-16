@@ -1,7 +1,8 @@
 node_modules/
 .env
-storage/
 dist/
 coverage/
 npmcache/
 .DS_Store
+/apps/api/storage/
+/apps/api/storage-test/

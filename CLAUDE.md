@@ -49,6 +49,7 @@ Ce n'est pas un produit à livrer vite. **L'objectif principal est que le dével
 | Traitement d'image | `sharp`, derrière l'interface `IImageProcessor` |
 | Upload HTTP | `multer` (ou équivalent) |
 | Tests | Vitest + `supertest` : unitaires, intégration, E2E |
+| Web (`apps/web`) | Angular 21 (standalone, signals, zoneless), Tailwind CSS v4, tests Vitest (jsdom) |
 | Cache / files (phases 3-4) | Redis, BullMQ |
 | Stockage objet (phase 5) | S3-compatible auto-hébergé (SeaweedFS ou Garage) via `@aws-sdk/client-s3` |
 
@@ -123,9 +124,9 @@ Codes HTTP corrects (201 création, 400 validation, 401 non authentifié, 404 in
 
 | Phase | Contenu | Statut |
 |---|---|---|
-| 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | En cours |
-| 2 | Transformations avec sharp, dérivés stockés | À faire |
-| 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | À faire |
+| 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | Terminée |
+| 2 | Transformations avec sharp, dérivés stockés | Terminée |
+| 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | En cours |
 | 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | À faire |
 | 5 | `S3FileStorage`, stockage objet auto-hébergé, URLs présignées | À faire |
 | 6 | Durcissement sécurité, tests de charge (k6/autocannon) | À faire |
@@ -146,31 +147,36 @@ Seule la phase marquée "En cours" est autorisée.
 
 ## 9. Structure des dossiers (cible)
 
+Le dépôt est un **monorepo npm workspaces** : `apps/api` (backend, structure ci-dessous),
+`apps/web` (application Angular + Tailwind CSS pour consommer l'API), infra partagée à la
+racine (`docker-compose.yml`, `docker/`, `postman/`). Les commandes se lancent depuis la racine.
+
 ```
-src/
-  domain/
-    entities/            User, Image
-    value-objects/       Email, ImageFormat, ImageDimensions, ...
-    repositories/        IUserRepository, IImageRepository
-    ports/               IFileStorage, IImageProcessor, ITokenService, IPasswordHasher
-    errors/              erreurs métier typées
-  application/
-    use-cases/           un fichier par cas d'usage
-    shared/              Result / Either
-  infrastructure/
-    http/                Express : routes, middlewares, schémas zod, mapping Result → HTTP
-    persistence/         implémentations pg des repositories + migrations runner
-    storage/             LocalFileStorage (puis S3FileStorage)
-    image/               SharpImageProcessor
-    security/            JWT, hachage
-    config/              lecture + validation des variables d'environnement
-  main.ts                composition root (assemblage des dépendances)
-db/migrations/           001_init.sql, 002_...
-tests/
-  unit/                  domaine + use cases (avec fakes en mémoire)
-  integration/           repositories contre PostgreSQL de test, storage sur disque temporaire
-  e2e/                   requêtes HTTP complètes (supertest)
-storage/                 fichiers locaux (ignoré par git)
+apps/api/
+  src/
+    domain/
+      entities/            User, Image
+      value-objects/       Email, ImageFormat, ImageDimensions, ...
+      repositories/        IUserRepository, IImageRepository
+      ports/               IFileStorage, IImageProcessor, ITokenService, IPasswordHasher
+      errors/              erreurs métier typées
+    application/
+      use-cases/           un fichier par cas d'usage
+      shared/              Result / Either
+    infrastructure/
+      http/                Express : routes, middlewares, schémas zod, mapping Result → HTTP
+      persistence/         implémentations pg des repositories + migrations runner
+      storage/             LocalFileStorage (puis S3FileStorage)
+      image/               SharpImageProcessor
+      security/            JWT, hachage
+      config/              lecture + validation des variables d'environnement
+    main.ts                composition root (assemblage des dépendances)
+  db/migrations/           001_init.sql, 002_...
+  tests/
+    unit/                  domaine + use cases (avec fakes en mémoire)
+    integration/           repositories contre PostgreSQL de test, storage sur disque temporaire
+    e2e/                   requêtes HTTP complètes (supertest)
+  storage/                 fichiers locaux (ignoré par git)
 ```
 
 ## 10. Conventions de code
@@ -190,5 +196,9 @@ En fin de phase, un résumé des **concepts appris** est ajouté à `LEARNINGS.m
 
 ## 12. Hors périmètre (pour l'instant)
 
-Frontend, déploiement cloud, paiement, OAuth/social login, import d'image par URL
+Déploiement cloud, paiement, OAuth/social login, import d'image par URL
 (risque SSRF), traitement vidéo, IA/ML sur les images.
+
+> Exception actée après la phase 1 : une **petite application web Angular** (`apps/web`,
+> Tailwind CSS) pour consommer l'API, hors des phases numérotées. Elle reste simple :
+> connexion/inscription, upload, galerie, visualisation. Aucun autre frontend.
