@@ -13,6 +13,11 @@ import { RegisterUser } from "./application/use-cases/register-user.js";
 import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
+import { EnqueueTransformJob } from "./application/use-cases/enqueue-transform-job.js";
+import { GetJob } from "./application/use-cases/get-job.js";
+import { createQueueConnection } from "./infrastructure/queue/bull-connection.js";
+import { BullMqTransformJobQueue } from "./infrastructure/queue/bullmq-transform-job-queue.js";
+import { PgTransformJobRepository } from "./infrastructure/persistence/pg-transform-job-repository.js";
 import { RedisRateLimiter } from "./infrastructure/cache/redis-rate-limiter.js";
 import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
 import { createApp } from "./infrastructure/http/app.js";
@@ -50,6 +55,13 @@ const uploadImage = new UploadImage(
   images,
   { maxBytes: config.value.MAX_UPLOAD_BYTES, maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
 );
+// File des transformations asynchrones : le worker (`npm run worker`) est un process SÉPARÉ qui consomme cette file.
+const queueConnection = createQueueConnection(config.value.REDIS_URL);
+const jobQueue = new BullMqTransformJobQueue(queueConnection, {
+  attempts: config.value.QUEUE_ATTEMPTS,
+  backoffMs: config.value.QUEUE_BACKOFF_MS,
+});
+const transformJobs = new PgTransformJobRepository(pool);
 const app = createApp({
   pool,
   redis,
@@ -61,6 +73,8 @@ const app = createApp({
   transformImage: new TransformImage(images, storage, processor, new RedisTransformCache(redis, config.value.CACHE_TTL_SECONDS), {
     maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE,
   }),
+  enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, jobQueue, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
+  getJob: new GetJob(transformJobs, images),
   tokens,
   rateLimiter: new RedisRateLimiter(redis),
   rateLimits: {
@@ -85,6 +99,9 @@ function shutdown(): void {
       pool.end(),
       redis.quit().catch(() => {
         redis.disconnect();
+      }),
+      jobQueue.close().then(() => queueConnection.quit()).catch(() => {
+        queueConnection.disconnect();
       }),
     ]).then(() => process.exit(0));
   });

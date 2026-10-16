@@ -164,6 +164,11 @@ variables `RATE_LIMIT_*`. Fail-open : Redis tombé → aucune limite appliquée 
 
 Voir ses clés en direct : faire 3 requêtes puis `KEYS ips:ratelimit:*` et `TTL ips:ratelimit:read:<id>`.
 
+## 6 bis. Et BullMQ ?
+
+Redis sert aussi de socle à la **file d'attente** de la phase 4 (clés `ips:bull:*`). Voir [`docs/BULLMQ.md`](./BULLMQ.md) : contrairement au
+cache, la file est **vitale** (fail-closed : sans Redis, `POST /images/:id/jobs` répond `503`).
+
 ## 7. Commandes pour explorer toi-même
 
 ```bash

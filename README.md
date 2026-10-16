@@ -84,6 +84,8 @@ npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de
 | GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
 | GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
 | POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). `201` + `X-Cache: MISS` (dérivé créé) ou `200` + `X-Cache: HIT` (déjà produit : renvoyé depuis le cache, sans retraitement), corps `{ id, originalId, format, sizeBytes, width, height, createdAt }` ; 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur), 429 (limite dépassée) |
+| POST | `/images/:id/jobs` | Authentifié. Version **asynchrone** de la transformation (mêmes paramètres, même quota `transform`) : crée un job, répond `202 Accepted` + `Location: /jobs/<id>`, et un **worker** traite l'image en arrière-plan. Corps : `{ id, status: "queued", sourceImageId, attempts, image: null, error: null, createdAt, updatedAt }`. 400 paramètres invalides (détectés tout de suite), 401, 404 (image inconnue ou d'un autre utilisateur), 429, **503** si la file (Redis) est injoignable |
+| GET | `/jobs/:id` | Authentifié. Statut d'un job (« polling », quota `read`) : `queued` → `processing` → `completed` (le champ `image` contient le dérivé) ou `failed` (le champ `error` donne `{ kind, message }`). 404 pour un job inconnu ou d'un autre utilisateur (jamais 403) |
 
 Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 
@@ -130,11 +132,11 @@ Si Redis est indisponible, la transformation fonctionne quand même, simplement 
 
 ## File d'attente et worker (phase 4)
 
-Les transformations peuvent être traitées **en arrière-plan** par un worker BullMQ (guide complet : `docs/BULLMQ.md`).
+Les transformations peuvent être traitées **en arrière-plan** par un worker BullMQ (`POST /images/:id/jobs` puis `GET /jobs/:id` ; guide complet : `docs/BULLMQ.md`). `POST /images/:id/transform` reste disponible, synchrone.
 Le statut de chaque job vit dans la table `transform_jobs` (PostgreSQL) ; Redis ne transporte que l'identifiant du job.
 Le worker est un process séparé : `npm run worker -w apps/api` (`dev:worker` pour le mode watch). Réglages :
 `QUEUE_ATTEMPTS` (3 tentatives), `QUEUE_BACKOFF_MS` (1000, doublé à chaque échec), `WORKER_CONCURRENCY` (2).
-Un échec métier (paramètres invalides, image absente) est définitif tout de suite ; une panne technique est
+**Sans worker lancé, les jobs restent `queued`** (la file les garde jusqu'au démarrage d'un worker). Un échec métier (paramètres invalides, image absente) est définitif tout de suite ; une panne technique est
 retentée avec attente croissante. Si Redis est injoignable à la mise en file : `503` (la file est vitale, contrairement au cache).
 
 ## Rate limiting
@@ -158,7 +160,7 @@ enchaîner jusqu'à 2× la limite à cheval sur deux fenêtres. Derrière un rev
 
 ## Redis
 
-Redis (cache et rate limiting, phase 3 ; guide : `docs/REDIS.md`) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des
+Redis (cache, rate limiting et file BullMQ ; guides : `docs/REDIS.md`, `docs/BULLMQ.md`) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des
 données jetables. Base 0 en développement (`REDIS_URL`), base 1 pour les tests (`TEST_REDIS_URL`) ; les tests ne
 touchent jamais à la base 0. Toutes les clés sont préfixées `ips:`.
 

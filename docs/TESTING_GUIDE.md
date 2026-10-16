@@ -303,14 +303,49 @@ Astuce : pour tester un palier sans taper 10 requêtes, démarrer l'API avec `RA
 Tests : `tests/unit/domain/transform-job.test.ts`, `tests/unit/application/process-transform-job.test.ts`,
 `tests/integration/pg-transform-job-repository.test.ts`, `tests/integration/bullmq-transform-queue.test.ts` (vrai Redis, vrai BullMQ).
 
-**À tester à la main** (le worker seul, sans HTTP : la partie API arrive à la branche suivante) :
+### Les endpoints asynchrones (`POST /images/:id/jobs`, `GET /jobs/:id`)
+
+| Variante | Attendu |
+|---|---|
+| paramètres valides | `202`, `Location: /jobs/<id>`, `Retry-After: 1`, job `queued` en base **et** en file |
+| paramètres invalides (`rotate: 45.5`), champ inconnu, `{}`, resize hors bornes | `400` immédiat, **aucun** job en base ni en file |
+| image d'un autre utilisateur / inconnue / id mal formé | `404` identique dans les trois cas |
+| sans jeton | `401` (création et suivi) |
+| `GET /jobs/:id` d'un autre utilisateur / inconnu / mal formé | même `404` (jamais 403) |
+| Redis arrêté à la création | `503 QueueUnavailable` en moins de ~4 s ; le job créé en base est supprimé |
+| quota | `POST /jobs` et `POST /transform` partagent le quota `transform` ; `GET /jobs/:id` compte dans `read` |
+| parcours complet avec un vrai worker | `202` → `queued`/`processing` → `completed` ; `image` (dérivé de la source, bon format et bonnes dimensions) ; son fichier est lisible via `GET /images/:id` |
+| aucun worker lancé | le job reste `queued` (la file garde le travail) puis est traité au démarrage du worker |
+| deux jobs identiques | un seul dérivé en base (cache partagé avec la voie synchrone), les deux `completed` |
+| fichier source disparu avant le traitement | `failed`, `error.kind = ImageNotFound`, 1 seule tentative |
+| un autre utilisateur suit le job | `404`, même une fois `completed` |
+
+Tests : `tests/unit/application/enqueue-transform-job.test.ts` (création + suivi), `tests/e2e/transform-jobs.test.ts`
+(HTTP + PostgreSQL + vraie file BullMQ + vrai worker + vrai sharp).
+
+**À tester à la main** (3 terminaux : `docker compose up -d` puis `npm run migrate`) :
 
 ```bash
-npm run migrate                                   # crée la table transform_jobs
-docker compose exec postgres psql -U imageservice -d imageservice_dev -c '\d transform_jobs'
-npm run worker -w apps/api                        # affiche « Worker démarré (concurrence : 2) » ; Ctrl+C → « Arrêt du worker... »
-docker compose exec redis redis-cli KEYS 'ips:bull:*'   # clés de la file (apparaissent dès qu'un job existe)
+npm run dev -w apps/api            # terminal 1 : l'API
+npm run worker -w apps/api         # terminal 2 : le worker (affiche « Worker démarré (concurrence : 2) »)
+
+# terminal 3 (ou Postman : requêtes « Create transform job (async) » puis « Get job (polling) »)
+curl -i -X POST localhost:3000/images/$IMG/jobs -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' -d '{"rotate":45,"filter":"sepia","format":"webp"}'
+curl -s localhost:3000/jobs/<id> -H "Authorization: Bearer $TOKEN"       # répéter : queued → completed
 ```
+
+Expériences à faire pour **voir** les concepts :
+1. **La file garde le travail** : arrêter le worker (Ctrl+C : « Arrêt du worker : fin des jobs en cours... »), créer un job → il reste
+   `queued` ; `docker compose exec redis redis-cli LLEN ips:bull:transform-image:wait` → 1 ; relancer le worker → `completed`.
+2. **Redis est jetable, le statut non** : `docker compose exec redis redis-cli FLUSHDB` ne supprime pas l'historique :
+   `docker compose exec postgres psql -U imageservice -d imageservice_dev -c "select id, status, attempts, error_kind from transform_jobs order by created_at desc"`.
+3. **La file est vitale** : `docker compose stop redis`, `POST /jobs` → `503` rapide (alors que `POST /transform` marche, sans cache) ; `docker compose start redis`.
+4. **Échec définitif** : créer un job, **supprimer le fichier** de l'image source dans `apps/api/storage/originals/` avant que le worker ne le prenne
+   (worker arrêté), puis relancer le worker → `failed` avec `error.kind = ImageNotFound`, sans nouvelle tentative.
+5. **Concurrence** : créer 6 jobs d'affilée avec des paramètres différents et regarder les logs du worker (2 traités en même temps).
+6. **Arrêt propre** : créer un job sur une grande image (3000×2000 ou plus), faire Ctrl+C sur le worker pendant le traitement : il termine le job avant de quitter.
+7. **Cache** : refaire exactement le même job → le second est `completed` quasi instantanément avec le même `image.id`.
 
 ## 10. Stockage ✅ (S3 🔜 phase 5)
 

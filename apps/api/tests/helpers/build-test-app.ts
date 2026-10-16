@@ -2,6 +2,11 @@
 import type { Express } from "express";
 import type { Redis } from "ioredis";
 import type pg from "pg";
+import { EnqueueTransformJob } from "../../src/application/use-cases/enqueue-transform-job.js";
+import { GetJob } from "../../src/application/use-cases/get-job.js";
+import type { ITransformJobQueue } from "../../src/domain/ports/transform-job-queue.js";
+import { PgTransformJobRepository } from "../../src/infrastructure/persistence/pg-transform-job-repository.js";
+import { FakeTransformJobQueue } from "../fakes/fake-transform-job-queue.js";
 import { GetImage } from "../../src/application/use-cases/get-image.js";
 import { ListImages } from "../../src/application/use-cases/list-images.js";
 import { LoginUser } from "../../src/application/use-cases/login-user.js";
@@ -38,6 +43,8 @@ export interface TestAppOptions {
   readonly redis?: Redis;
   /** Cache des transformations ; par défaut un cache en mémoire NEUF par application (aucune fuite entre tests). */
   readonly cache?: ITransformCache;
+  /** File des jobs ; par défaut une file factice NEUVE (aucun worker : les jobs restent `queued`). */
+  readonly jobQueue?: ITransformJobQueue;
   /** Limiteur de débit ; par défaut un limiteur en mémoire NEUF par application. */
   readonly rateLimiter?: IRateLimiter;
   /** Règles de limitation ; par défaut très hautes pour ne jamais gêner les autres tests. */
@@ -54,6 +61,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const tokens = new JwtTokenService(TEST_JWT_SECRET, "1h");
   const storage = new LocalFileStorage(options.storageDir ?? "storage-test");
   const images = new PgImageRepository(pool);
+  const transformJobs = new PgTransformJobRepository(pool);
   const maxPixelsSide = options.maxPixelsSide ?? 8000;
   const processor = new SharpImageProcessor({ limitInputPixels: maxPixelsSide ** 2 });
   const uploadImage = new UploadImage(storage, processor, images, { maxBytes: maxUploadBytes, maxPixelsSide });
@@ -66,6 +74,8 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     getImage: new GetImage(images, storage),
     listImages: new ListImages(images),
     transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }),
+    enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, options.jobQueue ?? new FakeTransformJobQueue(), { maxPixelsSide }),
+    getJob: new GetJob(transformJobs, images),
     tokens,
     rateLimiter: options.rateLimiter ?? new InMemoryRateLimiter(),
     rateLimits: options.rateLimits ?? { auth: NEVER_LIMITED, upload: NEVER_LIMITED, transform: NEVER_LIMITED, read: NEVER_LIMITED },
