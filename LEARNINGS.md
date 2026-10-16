@@ -239,3 +239,23 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    `ttl < 0` le compense : « mutant équivalent ») ; retirer les deux fait échouer 4 tests. Piège macOS : `sed -i` y exige une syntaxe
    différente et une mutation « appliquée » peut en réalité ne rien changer, vérifier qu'elle a bien eu lieu.
 
+## Phase 4
+
+### File d'attente, worker et jobs (`feat/p4-job-queue`)
+
+1. **Pourquoi une file.** Découpler « demander » de « faire » : l'API répond tout de suite, un worker (autre process) exécute.
+   On gagne en latence perçue, en robustesse (un redémarrage ne perd pas le travail) et en dimensionnement (API et traitement
+   d'images n'ont pas les mêmes besoins). BullMQ = file + workers + tentatives + backoff, sur Redis.
+2. **Statut en base, transport dans la file.** Redis est jetable : le statut (`queued → processing → completed | failed`) vit en
+   PostgreSQL, et la file ne transporte que l'identifiant du job (rien de sensible dans Redis, une seule source de vérité,
+   et le propriétaire est relu en base, jamais pris dans la file).
+3. **Échec métier ≠ échec technique.** Paramètres invalides : réessayer redonnerait la même erreur → `failed` immédiat, la file
+   considère le travail terminé. Base ou disque en panne : on laisse l'exception remonter, BullMQ réessaie avec backoff exponentiel,
+   et seul l'épuisement des tentatives marque `failed` (message générique). « completed » côté BullMQ ≠ « réussi » côté métier.
+4. **« Au moins une fois » exige l'idempotence.** Un job peut être livré deux fois : même identifiant côté BullMQ (le doublon est
+   ignoré), `ProcessTransformJob` ne retraite pas un job terminé, et la transformation passe par le cache et son verrou.
+5. **Fail-closed pour une file, fail-open pour un cache.** Sans file, le travail ne se ferait jamais : on répond 503 plutôt que de
+   promettre. Piège rencontré : `queue.add` attend LUI-MÊME la connexion sans limite de temps, donc avec Redis arrêté la requête
+   restait suspendue ; un test d'intégration l'a révélé (timeout), corrigé en vérifiant la connexion (~1 s) et en bornant l'appel.
+   BullMQ impose aussi ses propres connexions (`maxRetriesPerRequest: null`, pas de `commandTimeout`, pas de `keyPrefix`).
+

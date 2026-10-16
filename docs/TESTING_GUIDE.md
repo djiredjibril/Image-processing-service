@@ -275,17 +275,42 @@ docker compose stop redis   # puis refaire des requêtes : plus de 429 (fail-ope
 
 Astuce : pour tester un palier sans taper 10 requêtes, démarrer l'API avec `RATE_LIMIT_TRANSFORM=2 npm run dev -w apps/api`.
 
-## 9. File d'attente (BullMQ) 🔜 (phase 4, pas commencée)
+## 9. File d'attente et jobs (BullMQ) ✅ (phase 4)
 
-**À quoi ça servira** : aujourd'hui `POST /transform` traite l'image *pendant* la requête. En phase 4, l'API
-répondra tout de suite `202 Accepted` avec un identifiant de job, un **worker** traitera l'image en arrière-plan, et le
-client **interrogera** (`polling`) un endpoint de statut. BullMQ s'appuie sur Redis pour stocker les jobs.
+(Concepts et schéma : [`docs/BULLMQ.md`](./BULLMQ.md).)
 
-Ce qu'on pourra alors tester : statuts d'un job (`waiting`, `active`, `completed`, `failed`), nouvelle tentative
-après échec, plusieurs workers en parallèle, un job qui échoue toujours (file « morte »), l'arrêt propre d'un
-worker, la cohérence avec le cache de la section 7.
+**Implémentation** : `TransformJob` (machine à états, domaine) + table `transform_jobs` (statut = vérité) + port `ITransformJobQueue`
+→ `BullMqTransformJobQueue` (producteur) ; le worker (`startTransformWorker`) exécute `ProcessTransformJob`, qui réutilise `TransformImage`
+(donc le cache et son verrou). Process séparé : `npm run worker -w apps/api`.
 
-> Rien de BullMQ n'existe dans le code : la règle du projet interdit d'implémenter une phase future.
+| Variante | Attendu |
+|---|---|
+| job `queued` → worker | `processing` (tentative 1) puis `completed` + id du dérivé (parent = image source) |
+| 4 jobs d'affilée (concurrence 2) | tous traités |
+| contenu du job dans Redis | `{"jobId":"..."}` uniquement (aucun paramètre, aucun filigrane) |
+| même identifiant mis deux fois en file | traité une seule fois |
+| paramètres invalides (`rotate: 45.5`) | `failed` immédiat (`InvalidTransformation`), **1 seule** tentative |
+| image source d'un autre utilisateur | `failed` (`ImageNotFound`) : le propriétaire du job fait foi |
+| panne passagère de la base | nouvelle tentative avec backoff, puis `completed` (2 tentatives) |
+| panne persistante | après 3 tentatives, `failed` `ProcessingFailed`, message **générique** (pas de détail interne) |
+| job absent de la base | abandonné sans nouvelle tentative, le worker continue |
+| job déjà terminé livré deux fois | non retraité (idempotence) |
+| arrêt du worker pendant un job | `close()` attend la fin du job en cours |
+| Redis injoignable à la mise en file | `QueueUnavailable` en ~1 s (pas d'attente infinie) |
+| transitions interdites | `completed` et `failed` sont terminaux ; on ne complète pas un job non démarré |
+| base de données | statut hors énumération refusé ; image source inexistante refusée ; suppression de l'utilisateur supprime ses jobs |
+
+Tests : `tests/unit/domain/transform-job.test.ts`, `tests/unit/application/process-transform-job.test.ts`,
+`tests/integration/pg-transform-job-repository.test.ts`, `tests/integration/bullmq-transform-queue.test.ts` (vrai Redis, vrai BullMQ).
+
+**À tester à la main** (le worker seul, sans HTTP : la partie API arrive à la branche suivante) :
+
+```bash
+npm run migrate                                   # crée la table transform_jobs
+docker compose exec postgres psql -U imageservice -d imageservice_dev -c '\d transform_jobs'
+npm run worker -w apps/api                        # affiche « Worker démarré (concurrence : 2) » ; Ctrl+C → « Arrêt du worker... »
+docker compose exec redis redis-cli KEYS 'ips:bull:*'   # clés de la file (apparaissent dès qu'un job existe)
+```
 
 ## 10. Stockage ✅ (S3 🔜 phase 5)
 
