@@ -15,6 +15,7 @@ import { TransformImage } from "../../src/application/use-cases/transform-image.
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
 import { GetImageUrl } from "../../src/application/use-cases/get-image-url.js";
 import type { IFileUrlSigner } from "../../src/domain/ports/file-url-signer.js";
+import type { IImageProcessor } from "../../src/domain/ports/image-processor.js";
 import type { IFileStorage } from "../../src/domain/ports/file-storage.js";
 import type { ITransformCache } from "../../src/domain/ports/transform-cache.js";
 import { createRedisClient } from "../../src/infrastructure/cache/redis-client.js";
@@ -44,6 +45,8 @@ export interface TestAppOptions {
   readonly urlSigner?: IFileUrlSigner;
   /** Durée de validité des URLs présignées (défaut : 300 s). */
   readonly presignedUrlTtlSeconds?: number;
+  /** Processeur d'images (défaut : `SharpImageProcessor`) ; un faux permet de piloter la durée d'un traitement. */
+  readonly processor?: IImageProcessor;
   readonly maxUploadBytes?: number;
   readonly maxPixelsSide?: number;
   /** Origine CORS autorisée (défaut : celle de l'app Angular en dev). */
@@ -58,6 +61,10 @@ export interface TestAppOptions {
   readonly rateLimiter?: IRateLimiter;
   /** Règles de limitation ; par défaut très hautes pour ne jamais gêner les autres tests. */
   readonly rateLimits?: RateLimitsConfig;
+  /** Nombre de proxies de confiance (défaut 0). */
+  readonly trustProxyHops?: number;
+  /** Transformations synchrones simultanées (défaut : très haut, pour ne pas gêner les autres tests). */
+  readonly maxConcurrentTransforms?: number;
 }
 
 const NEVER_LIMITED = { limit: 1_000_000, windowSeconds: 60 };
@@ -72,7 +79,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const images = new PgImageRepository(pool);
   const transformJobs = new PgTransformJobRepository(pool);
   const maxPixelsSide = options.maxPixelsSide ?? 8000;
-  const processor = new SharpImageProcessor({ limitInputPixels: maxPixelsSide ** 2 });
+  const processor = options.processor ?? new SharpImageProcessor({ limitInputPixels: maxPixelsSide ** 2 });
   const uploadImage = new UploadImage(storage, processor, images, { maxBytes: maxUploadBytes, maxPixelsSide });
   return createApp({
     pool,
@@ -88,8 +95,10 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     getImageUrl: new GetImageUrl(images, storage, options.urlSigner ?? null, options.presignedUrlTtlSeconds ?? 300),
     tokens,
     rateLimiter: options.rateLimiter ?? new InMemoryRateLimiter(),
-    rateLimits: options.rateLimits ?? { auth: NEVER_LIMITED, upload: NEVER_LIMITED, transform: NEVER_LIMITED, read: NEVER_LIMITED },
+    rateLimits: options.rateLimits ?? { auth: NEVER_LIMITED, loginEmail: NEVER_LIMITED, upload: NEVER_LIMITED, transform: NEVER_LIMITED, read: NEVER_LIMITED },
     maxUploadBytes,
     corsOrigin: options.corsOrigin ?? "http://localhost:4200",
+    trustProxyHops: options.trustProxyHops ?? 0,
+    maxConcurrentTransforms: options.maxConcurrentTransforms ?? 1000,
   });
 }
