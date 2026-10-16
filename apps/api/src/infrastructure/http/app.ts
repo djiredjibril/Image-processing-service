@@ -14,10 +14,12 @@ import type { LoginUser } from "../../application/use-cases/login-user.js";
 import type { RegisterUser } from "../../application/use-cases/register-user.js";
 import type { TransformImage } from "../../application/use-cases/transform-image.js";
 import type { UploadImage } from "../../application/use-cases/upload-image.js";
+import type { IRateLimiter } from "../../domain/ports/rate-limiter.js";
 import type { ITokenService } from "../../domain/ports/token-service.js";
 import { createAuthMiddleware } from "./auth-middleware.js";
 import { isRedisUp } from "../cache/redis-client.js";
 import { errorHandler } from "./error-handler.js";
+import { byIp, byUser, chain, createRateLimitMiddleware, RATE_LIMIT_EXPOSED_HEADERS, type RateLimitsConfig } from "./rate-limit-middleware.js";
 import { createGetImageRouter } from "./routes/get-image-route.js";
 import { createListImagesRouter } from "./routes/list-images-route.js";
 import { createLoginRouter } from "./routes/login-route.js";
@@ -37,6 +39,10 @@ export interface AppDependencies {
   readonly listImages: ListImages;
   readonly transformImage: TransformImage;
   readonly tokens: ITokenService;
+  /** Limiteur de débit (fail-open : sa panne ne bloque jamais les requêtes). */
+  readonly rateLimiter: IRateLimiter;
+  /** Règles de limitation par palier. */
+  readonly rateLimits: RateLimitsConfig;
   readonly maxUploadBytes: number;
   /** Unique origine navigateur autorisée à appeler l'API (CORS). */
   readonly corsOrigin: string;
@@ -65,7 +71,7 @@ export function createApp(deps: AppDependencies): Express {
       methods: ["GET", "POST"],
       allowedHeaders: ["Authorization", "Content-Type"],
       // En-têtes de réponse lisibles par le JavaScript du navigateur (les autres sont masqués par CORS).
-      exposedHeaders: ["X-Cache"],
+      exposedHeaders: ["X-Cache", ...RATE_LIMIT_EXPOSED_HEADERS],
       maxAge: 600,
     }),
   );
@@ -85,13 +91,24 @@ export function createApp(deps: AppDependencies): Express {
     }
   });
 
+  // Un palier = un compteur par identité. Inscription et connexion partagent le palier « auth », compté par IP
+  // (l'utilisateur n'est pas connu) : cela freine le brute-force et la création de comptes en masse.
+  const limit = (scope: keyof RateLimitsConfig, identify: typeof byIp): ReturnType<typeof createRateLimitMiddleware> =>
+    createRateLimitMiddleware({ limiter: deps.rateLimiter, scope, policy: deps.rateLimits[scope], identify });
+  const authLimiter = limit("auth", byIp);
+  app.post("/register", authLimiter);
+  app.post("/login", authLimiter);
   app.use(createRegisterRouter(deps.registerUser));
   app.use(createLoginRouter(deps.loginUser));
+
+  // Paliers par utilisateur : la limitation vient APRÈS l'authentification (il faut connaître l'utilisateur),
+  // mais avant tout traitement coûteux (lecture du fichier envoyé, sharp).
   const authenticate = createAuthMiddleware(deps.tokens);
-  app.use(createUploadRouter(deps.uploadImage, authenticate, deps.maxUploadBytes));
-  app.use(createGetImageRouter(deps.getImage, authenticate));
-  app.use(createListImagesRouter(deps.listImages, authenticate));
-  app.use(createTransformImageRouter(deps.transformImage, authenticate));
+  const readAuth = chain(authenticate, limit("read", byUser));
+  app.use(createUploadRouter(deps.uploadImage, chain(authenticate, limit("upload", byUser)), deps.maxUploadBytes));
+  app.use(createGetImageRouter(deps.getImage, readAuth));
+  app.use(createListImagesRouter(deps.listImages, readAuth));
+  app.use(createTransformImageRouter(deps.transformImage, chain(authenticate, limit("transform", byUser))));
 
   app.use(errorHandler);
   return app;
