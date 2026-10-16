@@ -117,4 +117,32 @@ describe("PgTransformJobRepository", () => {
     await pool.query("DELETE FROM users WHERE id = $1", [ownerId]);
     expect(await repository.findById(job.id)).toBeNull();
   });
+
+  describe("listRecentByOwner", () => {
+    async function jobAt(owner: string, seconds: number): Promise<TransformJob> {
+      const base = TransformJob.create({ ownerId: owner, sourceImageId: imageId, transformations: { rotate: 90 } });
+      const at = new Date(Date.UTC(2026, 0, 1, 0, 0, seconds));
+      const job = TransformJob.restore({ ...base.props, createdAt: at, updatedAt: at });
+      await repository.save(job);
+      return job;
+    }
+
+    it("renvoie les jobs du propriétaire, du plus récent au plus ancien, limités", async () => {
+      await jobAt(ownerId, 1);
+      const newest = await jobAt(ownerId, 3);
+      await jobAt(ownerId, 2);
+      const list = await repository.listRecentByOwner(ownerId, 2);
+      expect(list).toHaveLength(2);
+      expect(list[0]?.id).toBe(newest.id);
+      expect(list.map((job) => job.props.createdAt.getTime())).toEqual([Date.UTC(2026, 0, 1, 0, 0, 3), Date.UTC(2026, 0, 1, 0, 0, 2)]);
+    });
+
+    it("n'inclut jamais les jobs d'un autre utilisateur ; liste vide s'il n'en a pas", async () => {
+      const other = User.create({ email: (Email.create("autre@example.com") as { value: Email }).value, passwordHash: PasswordHash.fromHash("h") });
+      await new PgUserRepository(pool).save(other);
+      await jobAt(ownerId, 1);
+      expect(await repository.listRecentByOwner(other.id, 10)).toEqual([]);
+    });
+  });
 });
+

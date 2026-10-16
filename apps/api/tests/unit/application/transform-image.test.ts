@@ -4,6 +4,7 @@ import { TransformImage } from "../../../src/application/use-cases/transform-ima
 import { UploadImage } from "../../../src/application/use-cases/upload-image.js";
 import { isErr, isOk } from "../../../src/domain/shared/result.js";
 import { LocalWorkSlots } from "../../../src/infrastructure/concurrency/local-work-slots.js";
+import { InMemoryStatsCounters } from "../../fakes/in-memory-stats-counters.js";
 import { InMemoryTransformCache, UnavailableTransformCache } from "../../fakes/in-memory-transform-cache.js";
 import { FakeImageProcessor } from "../../fakes/fake-image-processor.js";
 import { InMemoryFileStorage } from "../../fakes/in-memory-file-storage.js";
@@ -403,6 +404,26 @@ describe("TransformImage", () => {
       processor.transformGate = null;
       const retry = await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } });
       expect(isOk(retry)).toBe(true);
+    });
+  });
+
+  describe("compteurs d'activité", () => {
+    it("compte un calcul réel (cache_miss) puis une réponse du cache (cache_hit), et rien d'autre", async () => {
+      const stats = new InMemoryStatsCounters();
+      const counted = new TransformImage(images, storage, processor, cache, LIMITS, undefined, stats);
+      await counted.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } });
+      expect(stats.values).toEqual({ cache_hit: 0, cache_miss: 1, rate_limited: 0 });
+      await counted.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } });
+      expect(stats.values).toEqual({ cache_hit: 1, cache_miss: 1, rate_limited: 0 });
+    });
+
+    it("ne compte pas les refus (paramètres invalides, image d'autrui, serveur saturé)", async () => {
+      const stats = new InMemoryStatsCounters();
+      const counted = new TransformImage(images, storage, processor, cache, LIMITS, new LocalWorkSlots(0), stats);
+      await counted.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 45.5 } });
+      await counted.execute({ ownerId: "intruder", imageId: sourceId, transformations: { rotate: 90 } });
+      await counted.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } }); // saturé : 0 place
+      expect(stats.values).toEqual({ cache_hit: 0, cache_miss: 0, rate_limited: 0 });
     });
   });
 });

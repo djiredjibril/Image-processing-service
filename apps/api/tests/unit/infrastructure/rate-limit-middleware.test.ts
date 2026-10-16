@@ -51,6 +51,22 @@ describe("createRateLimitMiddleware", () => {
   });
 });
 
+describe("createRateLimitMiddleware : onLimited", () => {
+  it("est appelé pour chaque requête REFUSÉE (429), jamais pour une requête acceptée", async () => {
+    let limited = 0;
+    const app = express();
+    app.get("/x", createRateLimitMiddleware({ limiter: new InMemoryRateLimiter(), scope: "s", policy: POLICY, identify: () => "u", onLimited: () => limited++ }), (_req, res) => {
+      res.json({ ok: true });
+    });
+    await request(app).get("/x");
+    await request(app).get("/x");
+    expect(limited).toBe(0);
+    await request(app).get("/x");
+    await request(app).get("/x");
+    expect(limited).toBe(2);
+  });
+});
+
 describe("chain", () => {
   it("n'exécute pas le second middleware si le premier répond sans appeler next()", async () => {
     let secondRan = false;

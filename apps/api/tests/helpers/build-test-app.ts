@@ -14,6 +14,8 @@ import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { TransformImage } from "../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
+import { GetMonitoringOverview } from "../../src/application/use-cases/get-monitoring-overview.js";
+import { NO_STATS, type IQueueMonitor, type IRedisMonitor, type IStatsCounters } from "../../src/domain/ports/monitoring.js";
 import { GetImageUrl } from "../../src/application/use-cases/get-image-url.js";
 import type { IFileUrlSigner } from "../../src/domain/ports/file-url-signer.js";
 import type { IImageProcessor } from "../../src/domain/ports/image-processor.js";
@@ -62,11 +64,24 @@ export interface TestAppOptions {
   readonly rateLimiter?: IRateLimiter;
   /** Règles de limitation ; par défaut très hautes pour ne jamais gêner les autres tests. */
   readonly rateLimits?: RateLimitsConfig;
+  /** Compteurs d'activité (défaut : aucun). */
+  readonly stats?: IStatsCounters;
+  /** Observateurs de Redis et de la file pour la supervision (défaut : factices « indisponibles »). */
+  readonly redisMonitor?: IRedisMonitor;
+  readonly queueMonitor?: IQueueMonitor;
   /** Nombre de proxies de confiance (défaut 0). */
   readonly trustProxyHops?: number;
   /** Transformations synchrones simultanées (défaut : très haut, pour ne pas gêner les autres tests). */
   readonly maxConcurrentTransforms?: number;
 }
+
+/** Observateurs par défaut des tests : Redis et la file « indisponibles ». */
+const IDLE_REDIS_MONITOR: IRedisMonitor = {
+  stats: () => Promise.resolve({ available: false, version: null, usedMemoryBytes: null, connectedClients: null, uptimeSeconds: null, keys: null, approximate: false }),
+};
+const IDLE_QUEUE_MONITOR: IQueueMonitor = {
+  snapshot: () => Promise.resolve({ available: false, counts: { waiting: 0, active: 0, delayed: 0, completed: 0, failed: 0 }, workers: 0 }),
+};
 
 const NEVER_LIMITED = { limit: 1_000_000, windowSeconds: 60 };
 
@@ -90,9 +105,11 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     uploadImage,
     getImage: new GetImage(images, storage),
     listImages: new ListImages(images),
-    transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }, new LocalWorkSlots(options.maxConcurrentTransforms ?? 1000)),
+    transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }, new LocalWorkSlots(options.maxConcurrentTransforms ?? 1000), options.stats ?? NO_STATS),
     enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, options.jobQueue ?? new FakeTransformJobQueue(), { maxPixelsSide }),
     getJob: new GetJob(transformJobs, images),
+    getMonitoringOverview: new GetMonitoringOverview(options.redisMonitor ?? IDLE_REDIS_MONITOR, options.queueMonitor ?? IDLE_QUEUE_MONITOR, options.stats ?? NO_STATS, transformJobs, images),
+    stats: options.stats ?? NO_STATS,
     getImageUrl: new GetImageUrl(images, storage, options.urlSigner ?? null, options.presignedUrlTtlSeconds ?? 300),
     tokens,
     rateLimiter: options.rateLimiter ?? new InMemoryRateLimiter(),
