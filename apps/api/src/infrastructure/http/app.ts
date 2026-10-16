@@ -9,6 +9,7 @@ import express, { type Express } from "express";
 import type { Redis } from "ioredis";
 import type pg from "pg";
 import type { EnqueueTransformJob } from "../../application/use-cases/enqueue-transform-job.js";
+import type { GetImageUrl } from "../../application/use-cases/get-image-url.js";
 import type { GetImage } from "../../application/use-cases/get-image.js";
 import type { GetJob } from "../../application/use-cases/get-job.js";
 import type { ListImages } from "../../application/use-cases/list-images.js";
@@ -22,6 +23,7 @@ import { createAuthMiddleware } from "./auth-middleware.js";
 import { isRedisUp } from "../cache/redis-client.js";
 import { errorHandler } from "./error-handler.js";
 import { byIp, byUser, chain, createRateLimitMiddleware, RATE_LIMIT_EXPOSED_HEADERS, type RateLimitsConfig } from "./rate-limit-middleware.js";
+import { createGetImageUrlRouter } from "./routes/get-image-url-route.js";
 import { createGetImageRouter } from "./routes/get-image-route.js";
 import { createListImagesRouter } from "./routes/list-images-route.js";
 import { createLoginRouter } from "./routes/login-route.js";
@@ -45,6 +47,8 @@ export interface AppDependencies {
   readonly enqueueTransformJob: EnqueueTransformJob;
   /** Consultation du statut d'un job. */
   readonly getJob: GetJob;
+  /** Délivrance d'URLs de lecture signées (stockage S3). */
+  readonly getImageUrl: GetImageUrl;
   readonly tokens: ITokenService;
   /** Limiteur de débit (fail-open : sa panne ne bloque jamais les requêtes). */
   readonly rateLimiter: IRateLimiter;
@@ -114,6 +118,7 @@ export function createApp(deps: AppDependencies): Express {
   const readAuth = chain(authenticate, limit("read", byUser));
   app.use(createUploadRouter(deps.uploadImage, chain(authenticate, limit("upload", byUser)), deps.maxUploadBytes));
   app.use(createGetImageRouter(deps.getImage, readAuth));
+  app.use(createGetImageUrlRouter(deps.getImageUrl, readAuth));
   app.use(createListImagesRouter(deps.listImages, readAuth));
   // Créer un job coûte autant (en quota) qu'une transformation synchrone ; le suivi (polling) est une lecture.
   const transformAuth = chain(authenticate, limit("transform", byUser));

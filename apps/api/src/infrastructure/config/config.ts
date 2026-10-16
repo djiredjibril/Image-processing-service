@@ -50,6 +50,11 @@ const configSchema = z.object({
   // Obligatoires seulement si STORAGE_DRIVER=s3 (voir la vérification plus bas). `S3_FORCE_PATH_STYLE` : adressage
   // `http://hôte/bucket/clé`, nécessaire pour un stockage auto-hébergé (SeaweedFS, Garage, MinIO).
   S3_ENDPOINT: z.url().optional(),
+  // URL de l'endpoint S3 telle que le NAVIGATEUR la voit, pour les URLs présignées (défaut : S3_ENDPOINT). Utile quand l'API joint le
+  // stockage par un nom interne (ex. http://seaweedfs:8333 dans Docker) que le navigateur ne peut pas résoudre.
+  S3_PUBLIC_ENDPOINT: z.url().optional(),
+  // Durée de validité des URLs présignées, en secondes (7 jours au maximum : limite de la signature SigV4).
+  PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(300),
   S3_REGION: z.string().min(1).default("us-east-1"),
   S3_BUCKET: z.string().min(3).max(63).optional(),
   S3_ACCESS_KEY_ID: z.string().min(1).optional(),
