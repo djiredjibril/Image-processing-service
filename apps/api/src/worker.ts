@@ -5,6 +5,7 @@
  * (`npm run worker`), ce qui permet de dimensionner séparément l'API et le traitement d'images, et de relancer
  * l'un sans couper l'autre.
  */
+import "dotenv/config";
 import { loadConfig } from "./infrastructure/config/config.js";
 import { isErr } from "./application/shared/result.js";
 import { ProcessTransformJob } from "./application/use-cases/process-transform-job.js";
@@ -45,8 +46,15 @@ const worker = startTransformWorker(queueRedis, new ProcessTransformJob(new PgTr
 });
 console.log(`Worker démarré (concurrence : ${String(config.value.WORKER_CONCURRENCY)})`);
 
-/** Arrêt propre : le worker finit ses jobs EN COURS (sans en prendre de nouveaux), puis on ferme les connexions. */
+let stopping = false;
+
+/**
+ * Arrêt propre : le worker finit ses jobs EN COURS (sans en prendre de nouveaux), puis on ferme les connexions.
+ * Protégé contre les signaux répétés (Ctrl+C deux fois, ou `tsx` qui relaie le signal) : fermer le pool deux fois plante.
+ */
 async function shutdown(): Promise<void> {
+  if (stopping) return;
+  stopping = true;
   console.log("Arrêt du worker : fin des jobs en cours...");
   await worker.close();
   await Promise.all([
