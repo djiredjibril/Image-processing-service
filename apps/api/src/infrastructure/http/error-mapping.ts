@@ -6,6 +6,7 @@
  */
 import type { InvalidPaginationError } from "../../domain/errors/image-errors.js";
 import type { InvalidCredentialsError } from "../../domain/errors/user-errors.js";
+import type { EnqueueTransformJobError } from "../../application/use-cases/enqueue-transform-job.js";
 import type { TransformImageError } from "../../application/use-cases/transform-image.js";
 import type { UploadImageError } from "../../application/use-cases/upload-image.js";
 import type { RegisterUserError } from "../../application/use-cases/register-user.js";
@@ -97,5 +98,31 @@ export function transformErrorToHttp(error: TransformImageError): HttpError {
       return { status: 400, body: { error: error.kind, message: `Transformation invalide : ${error.reason}` } };
     case "CorruptedImage":
       return { status: 400, body: { error: error.kind, message: `Image illisible : ${error.reason}` } };
+  }
+}
+
+/**
+ * Réponse HTTP d'un job introuvable (inconnu OU appartenant à un autre utilisateur).
+ *
+ * @returns Toujours 404 avec le même corps : jamais 403, pour ne pas révéler l'existence d'un job.
+ */
+export function getJobErrorToHttp(): HttpError {
+  return { status: 404, body: { error: "JobNotFound", message: "Job introuvable" } };
+}
+
+/**
+ * Convertit une erreur de `EnqueueTransformJob` en réponse HTTP.
+ *
+ * @param error - Erreur métier renvoyée par le use case.
+ * @returns 404 (image introuvable), 400 (paramètres invalides) ou 503 (file d'attente injoignable : réessayer plus tard).
+ */
+export function enqueueErrorToHttp(error: EnqueueTransformJobError): HttpError {
+  switch (error.kind) {
+    case "ImageNotFound":
+      return getImageErrorToHttp();
+    case "InvalidTransformation":
+      return { status: 400, body: { error: error.kind, message: `Transformation invalide : ${error.reason}` } };
+    case "QueueUnavailable":
+      return { status: 503, body: { error: error.kind, message: "Service de traitement momentanément indisponible, réessayez plus tard" } };
   }
 }

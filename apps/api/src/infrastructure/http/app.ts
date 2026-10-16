@@ -8,7 +8,9 @@ import cors from "cors";
 import express, { type Express } from "express";
 import type { Redis } from "ioredis";
 import type pg from "pg";
+import type { EnqueueTransformJob } from "../../application/use-cases/enqueue-transform-job.js";
 import type { GetImage } from "../../application/use-cases/get-image.js";
+import type { GetJob } from "../../application/use-cases/get-job.js";
 import type { ListImages } from "../../application/use-cases/list-images.js";
 import type { LoginUser } from "../../application/use-cases/login-user.js";
 import type { RegisterUser } from "../../application/use-cases/register-user.js";
@@ -24,6 +26,7 @@ import { createGetImageRouter } from "./routes/get-image-route.js";
 import { createListImagesRouter } from "./routes/list-images-route.js";
 import { createLoginRouter } from "./routes/login-route.js";
 import { createRegisterRouter } from "./routes/register-route.js";
+import { createTransformJobRouter } from "./routes/transform-job-routes.js";
 import { createTransformImageRouter } from "./routes/transform-image-route.js";
 import { createUploadRouter } from "./routes/upload-image-route.js";
 
@@ -38,6 +41,10 @@ export interface AppDependencies {
   readonly getImage: GetImage;
   readonly listImages: ListImages;
   readonly transformImage: TransformImage;
+  /** Création d'un job de transformation traité en arrière-plan. */
+  readonly enqueueTransformJob: EnqueueTransformJob;
+  /** Consultation du statut d'un job. */
+  readonly getJob: GetJob;
   readonly tokens: ITokenService;
   /** Limiteur de débit (fail-open : sa panne ne bloque jamais les requêtes). */
   readonly rateLimiter: IRateLimiter;
@@ -108,7 +115,10 @@ export function createApp(deps: AppDependencies): Express {
   app.use(createUploadRouter(deps.uploadImage, chain(authenticate, limit("upload", byUser)), deps.maxUploadBytes));
   app.use(createGetImageRouter(deps.getImage, readAuth));
   app.use(createListImagesRouter(deps.listImages, readAuth));
-  app.use(createTransformImageRouter(deps.transformImage, chain(authenticate, limit("transform", byUser))));
+  // Créer un job coûte autant (en quota) qu'une transformation synchrone ; le suivi (polling) est une lecture.
+  const transformAuth = chain(authenticate, limit("transform", byUser));
+  app.use(createTransformImageRouter(deps.transformImage, transformAuth));
+  app.use(createTransformJobRouter(deps.enqueueTransformJob, deps.getJob, transformAuth, readAuth));
 
   app.use(errorHandler);
   return app;
