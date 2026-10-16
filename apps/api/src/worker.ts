@@ -36,7 +36,7 @@ const images = new PgImageRepository(pool);
 const processor = new SharpImageProcessor({ limitInputPixels: config.value.MAX_IMAGE_PIXELS_SIDE ** 2 });
 const transformImage = new TransformImage(
   images,
-  await createFileStorage(config.value),
+  (await createFileStorage(config.value)).storage,
   processor,
   new RedisTransformCache(cacheRedis, config.value.CACHE_TTL_SECONDS),
   { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },

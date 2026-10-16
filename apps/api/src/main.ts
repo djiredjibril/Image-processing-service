@@ -14,6 +14,7 @@ import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
 import { EnqueueTransformJob } from "./application/use-cases/enqueue-transform-job.js";
+import { GetImageUrl } from "./application/use-cases/get-image-url.js";
 import { GetJob } from "./application/use-cases/get-job.js";
 import { createQueueConnection } from "./infrastructure/queue/bull-connection.js";
 import { BullMqTransformJobQueue } from "./infrastructure/queue/bullmq-transform-job-queue.js";
@@ -45,7 +46,7 @@ if (!(await waitForRedis(redis, 2000))) {
 const users = new PgUserRepository(pool);
 const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
-const storage = await createFileStorage(config.value);
+const { storage, urlSigner } = await createFileStorage(config.value);
 const images = new PgImageRepository(pool);
 // Un côté de 8000 px => au plus 8000 x 8000 pixels décodés : borne la mémoire d'un traitement.
 const processor = new SharpImageProcessor({ limitInputPixels: config.value.MAX_IMAGE_PIXELS_SIDE ** 2 });
@@ -75,6 +76,7 @@ const app = createApp({
   }),
   enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, jobQueue, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
   getJob: new GetJob(transformJobs, images),
+  getImageUrl: new GetImageUrl(images, storage, urlSigner, config.value.PRESIGNED_URL_TTL_SECONDS),
   tokens,
   rateLimiter: new RedisRateLimiter(redis),
   rateLimits: {

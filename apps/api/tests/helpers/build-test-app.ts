@@ -13,6 +13,8 @@ import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { TransformImage } from "../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
+import { GetImageUrl } from "../../src/application/use-cases/get-image-url.js";
+import type { IFileUrlSigner } from "../../src/domain/ports/file-url-signer.js";
 import type { IFileStorage } from "../../src/domain/ports/file-storage.js";
 import type { ITransformCache } from "../../src/domain/ports/transform-cache.js";
 import { createRedisClient } from "../../src/infrastructure/cache/redis-client.js";
@@ -38,6 +40,10 @@ export interface TestAppOptions {
   readonly storageDir?: string;
   /** Stockage à utiliser (défaut : `LocalFileStorage` sur `storageDir`). */
   readonly storage?: IFileStorage;
+  /** Signeur d'URLs présignées (défaut : aucun, comme le stockage sur disque). */
+  readonly urlSigner?: IFileUrlSigner;
+  /** Durée de validité des URLs présignées (défaut : 300 s). */
+  readonly presignedUrlTtlSeconds?: number;
   readonly maxUploadBytes?: number;
   readonly maxPixelsSide?: number;
   /** Origine CORS autorisée (défaut : celle de l'app Angular en dev). */
@@ -79,6 +85,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }),
     enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, options.jobQueue ?? new FakeTransformJobQueue(), { maxPixelsSide }),
     getJob: new GetJob(transformJobs, images),
+    getImageUrl: new GetImageUrl(images, storage, options.urlSigner ?? null, options.presignedUrlTtlSeconds ?? 300),
     tokens,
     rateLimiter: options.rateLimiter ?? new InMemoryRateLimiter(),
     rateLimits: options.rateLimits ?? { auth: NEVER_LIMITED, upload: NEVER_LIMITED, transform: NEVER_LIMITED, read: NEVER_LIMITED },

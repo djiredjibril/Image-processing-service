@@ -6,8 +6,10 @@
  */
 import { S3Client } from "@aws-sdk/client-s3";
 import type { IFileStorage } from "../../domain/ports/file-storage.js";
+import type { IFileUrlSigner } from "../../domain/ports/file-url-signer.js";
 import type { Config } from "../config/config.js";
 import { LocalFileStorage } from "./local-file-storage.js";
+import { S3FileUrlSigner } from "./s3-file-url-signer.js";
 import { ensureBucket, S3FileStorage } from "./s3-file-storage.js";
 
 /** Options de connexion S3 (sous-ensemble de la configuration). */
@@ -62,26 +64,37 @@ async function withStartupRetries(operation: () => Promise<void>): Promise<void>
   }
 }
 
+/** Le stockage configuré, et son signeur d'URLs s'il en a un. */
+export interface FileStorageBundle {
+  readonly storage: IFileStorage;
+  /** `null` pour le disque local (pas d'URLs présignées possibles). */
+  readonly urlSigner: IFileUrlSigner | null;
+}
+
 /**
  * Construit le stockage configuré.
  *
  * @param config - Configuration validée.
- * @returns `LocalFileStorage` (driver `local`) ou `S3FileStorage` (driver `s3`, bucket créé s'il n'existe pas).
+ * @returns Le stockage : `LocalFileStorage` (driver `local`, sans signeur) ou `S3FileStorage` (driver `s3`, bucket créé s'il
+ * n'existe pas) accompagné d'un signeur dont l'URL pointe vers `S3_PUBLIC_ENDPOINT` (sinon `S3_ENDPOINT`).
  * @throws En driver `s3`, si le serveur S3 est injoignable ou le bucket introuvable et non créable : l'application ne
  * doit pas démarrer avec un stockage inutilisable (10 essais espacés d'1 s avant d'abandonner).
  */
-export async function createFileStorage(config: Config): Promise<IFileStorage> {
+export async function createFileStorage(config: Config): Promise<FileStorageBundle> {
   if (config.STORAGE_DRIVER === "local") {
-    return new LocalFileStorage(config.STORAGE_LOCAL_DIR);
+    return { storage: new LocalFileStorage(config.STORAGE_LOCAL_DIR), urlSigner: null };
   }
-  const client = createS3Client({
+  const settings: S3Settings = {
     endpoint: config.S3_ENDPOINT ?? "",
     region: config.S3_REGION,
     bucket: config.S3_BUCKET ?? "",
     accessKeyId: config.S3_ACCESS_KEY_ID ?? "",
     secretAccessKey: config.S3_SECRET_ACCESS_KEY ?? "",
     forcePathStyle: config.S3_FORCE_PATH_STYLE,
-  });
-  await withStartupRetries(() => ensureBucket(client, config.S3_BUCKET ?? ""));
-  return new S3FileStorage(client, config.S3_BUCKET ?? "");
+  };
+  const client = createS3Client(settings);
+  await withStartupRetries(() => ensureBucket(client, settings.bucket));
+  // Client distinct pour signer : seul l'hôte de l'URL change, la signature est calculée localement (aucun appel réseau).
+  const signingClient = createS3Client({ ...settings, endpoint: config.S3_PUBLIC_ENDPOINT ?? settings.endpoint });
+  return { storage: new S3FileStorage(client, settings.bucket), urlSigner: new S3FileUrlSigner(signingClient, settings.bucket) };
 }

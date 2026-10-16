@@ -6,6 +6,7 @@
  */
 import type { InvalidPaginationError } from "../../domain/errors/image-errors.js";
 import type { InvalidCredentialsError } from "../../domain/errors/user-errors.js";
+import type { GetImageUrlError } from "../../application/use-cases/get-image-url.js";
 import type { EnqueueTransformJobError } from "../../application/use-cases/enqueue-transform-job.js";
 import type { TransformImageError } from "../../application/use-cases/transform-image.js";
 import type { UploadImageError } from "../../application/use-cases/upload-image.js";
@@ -124,5 +125,20 @@ export function enqueueErrorToHttp(error: EnqueueTransformJobError): HttpError {
       return { status: 400, body: { error: error.kind, message: `Transformation invalide : ${error.reason}` } };
     case "QueueUnavailable":
       return { status: 503, body: { error: error.kind, message: "Service de traitement momentanément indisponible, réessayez plus tard" } };
+  }
+}
+
+/**
+ * Convertit une erreur de `GetImageUrl` en réponse HTTP.
+ *
+ * @param error - Erreur métier renvoyée par le use case.
+ * @returns 404 (image introuvable, jamais 403) ou 501 (le stockage configuré ne gère pas les URLs signées : utiliser `GET /images/:id`).
+ */
+export function getImageUrlErrorToHttp(error: GetImageUrlError): HttpError {
+  switch (error.kind) {
+    case "ImageNotFound":
+      return getImageErrorToHttp();
+    case "PresignedUrlsUnsupported":
+      return { status: 501, body: { error: error.kind, message: "Ce stockage ne propose pas d'URLs signées : utilisez GET /images/:id" } };
   }
 }

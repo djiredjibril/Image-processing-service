@@ -88,5 +88,16 @@ describe("loadConfig", () => {
       expect(isErr(loadConfig({ ...s3Env, S3_BUCKET: "ab" }))).toBe(true);
       expect(isErr(loadConfig({ ...s3Env, S3_FORCE_PATH_STYLE: "peut-etre" }))).toBe(true);
     });
+
+    it("URLs présignées : durée de 300 s par défaut, bornée de 1 s à 7 jours ; endpoint public optionnel et valide", () => {
+      const defaults = loadConfig(s3Env);
+      expect(isOk(defaults) && defaults.value.PRESIGNED_URL_TTL_SECONDS).toBe(300);
+      expect(isOk(defaults) && defaults.value.S3_PUBLIC_ENDPOINT).toBeUndefined();
+      expect(isOk(loadConfig({ ...s3Env, PRESIGNED_URL_TTL_SECONDS: "604800", S3_PUBLIC_ENDPOINT: "https://cdn.exemple.test" }))).toBe(true);
+      for (const bad of ["0", "604801", "-5", "abc", "1.5"]) {
+        expect(isErr(loadConfig({ ...s3Env, PRESIGNED_URL_TTL_SECONDS: bad }))).toBe(true);
+      }
+      expect(isErr(loadConfig({ ...s3Env, S3_PUBLIC_ENDPOINT: "pas-une-url" }))).toBe(true);
+    });
   });
 });
