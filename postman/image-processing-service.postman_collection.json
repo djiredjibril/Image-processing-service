@@ -1,0 +1,345 @@
+{
+  "info": {
+    "name": "Image Processing Service",
+    "description": "Collection Postman du projet. Lancer d'abord POST /register puis POST /login : le jeton est enregistré automatiquement dans la variable `token`.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3001"
+    },
+    {
+      "key": "email",
+      "value": "salut@example.com"
+    },
+    {
+      "key": "password",
+      "value": "motdepasse123"
+    },
+    {
+      "key": "token",
+      "value": ""
+    },
+    {
+      "key": "imageId",
+      "value": ""
+    },
+    {
+      "key": "derivedId",
+      "value": ""
+    },
+    {
+      "key": "jobId",
+      "value": ""
+    },
+    {
+      "key": "presignedUrl",
+      "value": ""
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "request": {
+        "method": "GET",
+        "url": "{{baseUrl}}/health",
+        "description": "200 si l'API et la base répondent, 503 sinon."
+      }
+    },
+    {
+      "name": "Register",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/register",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "201 { id, email } | 400 validation ou JSON malformé | 409 e-mail déjà pris.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
+      }
+    },
+    {
+      "name": "Login",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('token', pm.response.json().token);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{baseUrl}}/login",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+        },
+        "description": "200 { token } (stocké dans la variable `token`) | 400 validation | 401 identifiants incorrects.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
+      }
+    },
+    {
+      "name": "Upload image",
+      "request": {
+        "method": "POST",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images",
+        "body": {
+          "mode": "formdata",
+          "formdata": [
+            {
+              "key": "image",
+              "type": "file",
+              "src": []
+            }
+          ]
+        },
+        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté. L'id de l'image créée est enregistré dans la variable `imageId`.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 201) {",
+              "  pm.collectionVariables.set('imageId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Get image",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}",
+        "description": "Renvoie le fichier (flux) avec son Content-Type. 200 | 401 | 404 (image inconnue OU appartenant à un autre utilisateur : jamais 403)."
+      }
+    },
+    {
+      "name": "Get image URL (presigned)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}/url",
+        "description": "URL SIGNÉE et temporaire pour télécharger l'image DIRECTEMENT depuis le stockage S3, sans repasser par l'API ni envoyer de jeton : { url, expiresInSeconds, expiresAt }. Disponible avec STORAGE_DRIVER=s3 uniquement (501 PresignedUrlsUnsupported avec le disque local). L'URL est une PERMISSION : quiconque la possède peut lire l'image jusqu'à son expiration (défaut 300 s) ; ne pas la partager ni la journaliser. Coller l'URL dans le navigateur ou dans une requête sans autorisation pour la tester. 200 | 401 | 404 image inconnue ou d'un autre utilisateur | 429."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('presignedUrl', pm.response.json().url);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "List images",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": {
+          "raw": "{{baseUrl}}/images?page=1&limit=10",
+          "host": [
+            "{{baseUrl}}"
+          ],
+          "path": [
+            "images"
+          ],
+          "query": [
+            {
+              "key": "page",
+              "value": "1"
+            },
+            {
+              "key": "limit",
+              "value": "10"
+            }
+          ]
+        },
+        "description": "Liste paginée de TES images, la plus récente d'abord. Défauts : page=1, limit=10 ; limit max 50. 200 { items, page, limit, total } | 400 paramètres hors bornes | 401."
+      }
+    },
+    {
+      "name": "Transform image",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200 || pm.response.code === 201) {",
+              "  pm.collectionVariables.set('derivedId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}/transform",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"crop\": { \"x\": 0, \"y\": 0, \"width\": 200, \"height\": 200 },\n  \"rotate\": 90,\n  \"flip\": false,\n  \"mirror\": true,\n  \"resize\": { \"width\": 300, \"fit\": \"inside\" },\n  \"filter\": \"sepia\",\n  \"watermark\": { \"text\": \"© Mon Studio\", \"position\": \"bottom-right\", \"opacity\": 0.6 },\n  \"format\": \"webp\",\n  \"quality\": 80\n}"
+        },
+        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → watermark → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. watermark = filigrane texte : text (1 à 30 caractères : lettres, chiffres, espace et . , ' : ; ! ? @ # & ( ) © _ -), position = center|top-left|top-right|bottom-left|bottom-right (défaut bottom-right), opacity 0,1 à 1 (défaut 0,5). format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 + en-tête `X-Cache: MISS` = dérivé créé ; 200 + `X-Cache: HIT` = la même transformation avait déjà été faite (cache Redis, 24 h) : le dérivé existant est renvoyé sans retraitement ni doublon. Corps : { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse. 429 limite dépassée | 503 + Retry-After : serveur saturé (trop de transformations simultanées à CALCULER ; une réponse déjà en cache est toujours servie) : réessayer."
+      }
+    },
+    {
+      "name": "Create transform job (async)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 202) {",
+              "  pm.collectionVariables.set('jobId', pm.response.json().id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}/jobs",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"crop\": { \"x\": 0, \"y\": 0, \"width\": 200, \"height\": 200 },\n  \"rotate\": 90,\n  \"flip\": false,\n  \"mirror\": true,\n  \"resize\": { \"width\": 300, \"fit\": \"inside\" },\n  \"filter\": \"sepia\",\n  \"watermark\": { \"text\": \"© Mon Studio\", \"position\": \"bottom-right\", \"opacity\": 0.6 },\n  \"format\": \"webp\",\n  \"quality\": 80\n}"
+        },
+        "description": "Transformation ASYNCHRONE : mêmes paramètres que « Transform image », mais l'API répond tout de suite 202 + en-tête `Location: /jobs/<id>` (le traitement est fait par le worker : `npm run worker -w apps/api`). Corps : le job { id, status: \"queued\", sourceImageId, attempts, image: null, error: null, ... } ; l'id est enregistré dans `jobId`. Ensuite, lancer « Get job » plusieurs fois (polling). 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur | 429 limite dépassée (même quota que la transformation synchrone) | 503 file d'attente (Redis) injoignable."
+      }
+    },
+    {
+      "name": "Get job (polling)",
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "const body = pm.response.json();",
+              "if (pm.response.code === 200 && body.status === 'completed' && body.image) {",
+              "  pm.collectionVariables.set('derivedId', body.image.id);",
+              "}"
+            ]
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/jobs/{{jobId}}",
+        "description": "Statut du job : `queued` → `processing` → `completed` (le champ `image` contient alors le dérivé, et son id est enregistré dans `derivedId`) ou `failed` (le champ `error` donne le type et le message). À relancer jusqu'à un statut final. 200 | 401 | 404 job inconnu ou d'un autre utilisateur | 429."
+      }
+    }
+  ]
+}

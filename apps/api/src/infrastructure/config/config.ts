@@ -1,0 +1,100 @@
+/**
+ * Lecture et validation des variables d'environnement avec zod.
+ *
+ * Couche : infrastructure. Le reste de l'application reçoit un objet `Config`
+ * typé et ne lit jamais `process.env` directement.
+ */
+import { z } from "zod";
+import { err, ok, type Result } from "../../application/shared/result.js";
+
+/** Vrai si la chaîne est exactement une origine (`schéma://hôte[:port]`), sans chemin ni `/` final. */
+function isPlainOrigin(value: string): boolean {
+  try {
+    return new URL(value).origin === value;
+  } catch {
+    return false;
+  }
+}
+
+const configSchema = z.object({
+  PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  DATABASE_URL: z.string().min(1),
+  TEST_DATABASE_URL: z.string().min(1),
+  JWT_SECRET: z.string().min(32, "JWT_SECRET doit faire au moins 32 caractères"),
+  JWT_EXPIRES_IN: z
+    .string()
+    .regex(/^\d+[smhdw]$/, "JWT_EXPIRES_IN doit ressembler à 30m, 1h, 7d")
+    .default("1h"),
+  // Base 0 en développement ; les tests utilisent TEST_REDIS_URL (base 1) pour ne jamais toucher aux données de dev.
+  REDIS_URL: z.string().min(1).default("redis://localhost:6380/0"),
+  // Durée de vie d'une entrée du cache des transformations (24 h par défaut).
+  CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // Rate limiting : requêtes autorisées par fenêtre (RATE_LIMIT_WINDOW_SECONDS, 60 s par défaut) et par palier.
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_AUTH: z.coerce.number().int().positive().default(10),
+  // Tentatives de connexion par ADRESSE E-MAIL visée (en plus de la limite par IP) : fenêtre plus longue (15 min par défaut).
+  RATE_LIMIT_LOGIN_EMAIL: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
+  RATE_LIMIT_UPLOAD: z.coerce.number().int().positive().default(20),
+  RATE_LIMIT_TRANSFORM: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_READ: z.coerce.number().int().positive().default(300),
+  // File d'attente (BullMQ) : nombre total de tentatives par job, délai initial avant une nouvelle tentative (x2 à
+  // chaque échec), et nombre de jobs traités en parallèle par worker (chaque traitement sharp peut prendre ~1 Go de RAM).
+  QUEUE_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  QUEUE_BACKOFF_MS: z.coerce.number().int().min(0).default(1000),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(2),
+  // Nombre de reverse proxies de confiance devant l'API (0 = aucun : l'IP du client est celle de la connexion TCP). À régler
+  // exactement : trop bas, tous les clients paraissent avoir l'IP du proxy ; trop haut, un client peut falsifier son IP (X-Forwarded-For).
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
+  // Transformations synchrones simultanées dans CE process (au-delà : 503). Chaque traitement peut prendre ~1 Go de RAM.
+  MAX_CONCURRENT_TRANSFORMS: z.coerce.number().int().min(1).max(64).default(2),
+  CORS_ORIGIN: z
+    .string()
+    .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")
+    .default("http://localhost:4200"),
+  // Où vivent les fichiers d'images : `local` (disque, dossier STORAGE_LOCAL_DIR) ou `s3` (stockage objet compatible S3).
+  STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
+  STORAGE_LOCAL_DIR: z.string().min(1).default("storage"),
+  // Obligatoires seulement si STORAGE_DRIVER=s3 (voir la vérification plus bas). `S3_FORCE_PATH_STYLE` : adressage
+  // `http://hôte/bucket/clé`, nécessaire pour un stockage auto-hébergé (SeaweedFS, Garage, MinIO).
+  S3_ENDPOINT: z.url().optional(),
+  // URL de l'endpoint S3 telle que le NAVIGATEUR la voit, pour les URLs présignées (défaut : S3_ENDPOINT). Utile quand l'API joint le
+  // stockage par un nom interne (ex. http://seaweedfs:8333 dans Docker) que le navigateur ne peut pas résoudre.
+  S3_PUBLIC_ENDPOINT: z.url().optional(),
+  // Durée de validité des URLs présignées, en secondes (7 jours au maximum : limite de la signature SigV4).
+  PRESIGNED_URL_TTL_SECONDS: z.coerce.number().int().min(1).max(604_800).default(300),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(3).max(63).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  S3_FORCE_PATH_STYLE: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
+  MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),
+  MAX_IMAGE_PIXELS_SIDE: z.coerce.number().int().positive().default(8000),
+}).superRefine((config, context) => {
+  if (config.STORAGE_DRIVER !== "s3") return;
+  for (const name of ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const) {
+    if (config[name] === undefined) {
+      context.addIssue({ code: "custom", path: [name], message: `${name} est obligatoire quand STORAGE_DRIVER=s3` });
+    }
+  }
+});
+
+/** Configuration validée de l'application (immuable, entièrement typée). */
+export type Config = Readonly<z.infer<typeof configSchema>>;
+
+/**
+ * Valide un objet de variables d'environnement.
+ *
+ * Pourquoi un `Result` plutôt qu'un `throw` : la validation est testable sans
+ * process qui plante, et c'est `main.ts` qui décide d'arrêter l'application.
+ *
+ * @param env - Variables brutes (typiquement `process.env`).
+ * @returns `Ok(Config)` si tout est valide, sinon `Err` avec la liste des problèmes lisibles.
+ */
+export function loadConfig(env: Readonly<Record<string, string | undefined>>): Result<Config, string[]> {
+  const parsed = configSchema.safeParse(env);
+  if (parsed.success) {
+    return ok(parsed.data);
+  }
+  return err(parsed.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`));
+}

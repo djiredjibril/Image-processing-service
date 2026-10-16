@@ -1,4 +1,5 @@
-# PostgreSQL local de développement. Deux bases : imageservice_dev et imageservice_test.
+# Services locaux de développement : PostgreSQL (bases imageservice_dev et imageservice_test), Redis (cache, rate limiting, file BullMQ)
+# et SeaweedFS (stockage objet compatible S3, phase 5).
 services:
   postgres:
     image: postgres:16-alpine
@@ -18,5 +19,37 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  redis:
+    image: redis:7-alpine
+    # Port hôte 6380 pour ne pas entrer en conflit avec un Redis déjà présent sur 6379.
+    ports:
+      - "6380:6379"
+    # Cache et compteurs de rate limiting : données jetables, donc aucune persistance sur disque.
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  seaweedfs:
+    image: chrislusf/seaweedfs:latest
+    # Un seul process « tout-en-un » (master + volume + filer + passerelle S3) : suffisant pour le développement local.
+    # `-volume.max=100` : SeaweedFS réserve environ 7 « volumes » PAR BUCKET (jusqu'à 128 Mo chacun, alloués à la demande).
+    # Avec la valeur par défaut (une vingtaine), le 3e bucket échouait en 500 « No free volumes left » à la 1re écriture.
+    command: ["server", "-dir=/data", "-s3", "-s3.config=/etc/seaweedfs/s3.json", "-master.volumeSizeLimitMB=128", "-volume.max=100"]
+    ports:
+      # 8333 = API S3 (ce que le SDK AWS appelle). Les autres ports (master 9333, volume 8080, filer 8888) restent internes.
+      - "8333:8333"
+    volumes:
+      - ./docker/seaweedfs-s3.json:/etc/seaweedfs/s3.json:ro
+      - seaweedfs-data:/data
+    healthcheck:
+      # On teste la passerelle S3 (8333), pas seulement le master : « master prêt » ne veut pas dire « S3 prêt ».
+      # `localhost` se résout parfois en IPv6 (::1) alors que le service écoute en IPv4 : on utilise 127.0.0.1.
+      test: ["CMD-SHELL", "curl -s -o /dev/null http://127.0.0.1:8333/ || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 volumes:
   pgdata:
+  seaweedfs-data:
