@@ -13,6 +13,7 @@ export const routes: Routes = [
   { path: 'images', canActivate: [authGuard], loadComponent: () => import('./features/gallery/gallery').then((m) => m.Gallery) },
   { path: 'images/new', canActivate: [authGuard], loadComponent: () => import('./features/upload/upload').then((m) => m.Upload) },
   { path: 'images/:id', canActivate: [authGuard], loadComponent: () => import('./features/image-detail/image-detail').then((m) => m.ImageDetail) },
+  { path: 'monitoring', canActivate: [authGuard], loadComponent: () => import('./features/monitoring/monitoring').then((m) => m.Monitoring) },
   { path: '', pathMatch: 'full', redirectTo: 'images' },
   { path: '**', redirectTo: 'images' },
 ];

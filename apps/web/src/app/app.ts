@@ -17,6 +17,7 @@ import { AuthService } from './core/auth/auth.service';
           @if (auth.isAuthenticated()) {
             <a routerLink="/images" routerLinkActive="font-semibold text-indigo-600" [routerLinkActiveOptions]="{ exact: true }" class="text-slate-600 hover:text-indigo-600">Galerie</a>
             <a routerLink="/images/new" routerLinkActive="font-semibold text-indigo-600" class="text-slate-600 hover:text-indigo-600">Envoyer</a>
+            <a routerLink="/monitoring" routerLinkActive="font-semibold text-indigo-600" class="text-slate-600 hover:text-indigo-600">Supervision</a>
             <button type="button" (click)="logout()" class="rounded-md border border-slate-300 px-3 py-1 text-slate-700 hover:bg-slate-50">Se déconnecter</button>
           } @else {
             <a routerLink="/login" routerLinkActive="font-semibold text-indigo-600" class="text-slate-600 hover:text-indigo-600">Connexion</a>
