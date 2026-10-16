@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { TransformImage } from "../../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../../src/application/use-cases/upload-image.js";
 import { isErr, isOk } from "../../../src/domain/shared/result.js";
+import { LocalWorkSlots } from "../../../src/infrastructure/concurrency/local-work-slots.js";
 import { InMemoryTransformCache, UnavailableTransformCache } from "../../fakes/in-memory-transform-cache.js";
 import { FakeImageProcessor } from "../../fakes/fake-image-processor.js";
 import { InMemoryFileStorage } from "../../fakes/in-memory-file-storage.js";
@@ -339,4 +340,70 @@ describe("TransformImage", () => {
       expect(isErr(stranger) && stranger.error.kind).toBe("ImageNotFound");
     });
   });
+
+  describe("plafond de traitements simultanés", () => {
+    const withSlots = (max: number): TransformImage => new TransformImage(images, storage, processor, cache, LIMITS, new LocalWorkSlots(max));
+
+    async function saturate(max: number): Promise<{ limited: TransformImage; release: () => void; first: ReturnType<TransformImage["execute"]> }> {
+      const limited = withSlots(max);
+      let release: () => void = () => undefined;
+      processor.transformGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = processor.nextTransformStarted();
+      const first = limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } });
+      await started;
+      return { limited, release, first };
+    }
+
+    it("refuse avec ServerBusy (sans traitement) quand le plafond est atteint et que la réponse n'est pas en cache", async () => {
+      const { limited, release, first } = await saturate(1);
+      const refused = await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } });
+      expect(isErr(refused) && refused.error.kind).toBe("ServerBusy");
+      expect(processor.transformCalls).toHaveLength(1);
+      release();
+      expect(isOk(await first)).toBe(true);
+    });
+
+    it("une réponse DÉJÀ en cache n'est jamais refusée, même plafond saturé (le cache ne coûte pas de place)", async () => {
+      const limited = withSlots(1);
+      expect(isOk(await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } }))).toBe(true);
+      let release: () => void = () => undefined;
+      processor.transformGate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const started = processor.nextTransformStarted();
+      const busy = limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } });
+      await started; // plafond saturé par un autre calcul
+
+      const hit = await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } });
+      expect(isOk(hit) && hit.value.cached).toBe(true);
+      release();
+      await busy;
+    });
+
+    it("rend la place après un succès, un échec métier ET une panne technique", async () => {
+      const limited = withSlots(1);
+      expect(isOk(await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 90 } }))).toBe(true);
+      processor.transformed = null; // sharp répond « image illisible » (échec métier)
+      expect(isErr(await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } }))).toBe(true);
+      processor.transformed = { width: 5, height: 5, bytes: Uint8Array.from([1]) };
+      images.failOnSave = true; // panne de base : le use case lève une exception
+      await expect(limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 270 } })).rejects.toThrow();
+      images.failOnSave = false;
+      const after = await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { flip: true } });
+      expect(isOk(after)).toBe(true); // si une place avait fuité, ce serait ServerBusy
+    });
+
+    it("le refus libère aussi le verrou du cache : une demande identique ultérieure peut calculer", async () => {
+      const { limited, release, first } = await saturate(1);
+      await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } }); // refusée
+      release();
+      await first;
+      processor.transformGate = null;
+      const retry = await limited.execute({ ownerId: "owner", imageId: sourceId, transformations: { rotate: 180 } });
+      expect(isOk(retry)).toBe(true);
+    });
+  });
 });
+

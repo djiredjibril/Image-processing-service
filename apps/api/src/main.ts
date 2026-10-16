@@ -19,6 +19,7 @@ import { GetJob } from "./application/use-cases/get-job.js";
 import { createQueueConnection } from "./infrastructure/queue/bull-connection.js";
 import { BullMqTransformJobQueue } from "./infrastructure/queue/bullmq-transform-job-queue.js";
 import { PgTransformJobRepository } from "./infrastructure/persistence/pg-transform-job-repository.js";
+import { LocalWorkSlots } from "./infrastructure/concurrency/local-work-slots.js";
 import { configureServerTimeouts } from "./infrastructure/http/server-timeouts.js";
 import { RedisRateLimiter } from "./infrastructure/cache/redis-rate-limiter.js";
 import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
@@ -74,7 +75,7 @@ const app = createApp({
   listImages: new ListImages(images),
   transformImage: new TransformImage(images, storage, processor, new RedisTransformCache(redis, config.value.CACHE_TTL_SECONDS), {
     maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE,
-  }),
+  }, new LocalWorkSlots(config.value.MAX_CONCURRENT_TRANSFORMS)),
   enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, jobQueue, { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE }),
   getJob: new GetJob(transformJobs, images),
   getImageUrl: new GetImageUrl(images, storage, urlSigner, config.value.PRESIGNED_URL_TTL_SECONDS),
@@ -90,7 +91,6 @@ const app = createApp({
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
   corsOrigin: config.value.CORS_ORIGIN,
   trustProxyHops: config.value.TRUST_PROXY,
-  maxConcurrentTransforms: config.value.MAX_CONCURRENT_TRANSFORMS,
 });
 
 const server = app.listen(config.value.PORT, () => {

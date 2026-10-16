@@ -15,6 +15,8 @@ import type { RegisterUserError } from "../../application/use-cases/register-use
 /** Réponse HTTP d'erreur : statut + corps JSON. */
 export interface HttpError {
   readonly status: number;
+  /** En-têtes de réponse supplémentaires (ex. `Retry-After`). */
+  readonly headers?: Readonly<Record<string, string>>;
   readonly body: { readonly error: string; readonly message: string };
 }
 
@@ -89,7 +91,7 @@ export function listImagesErrorToHttp(error: InvalidPaginationError): HttpError 
  * Convertit une erreur de `TransformImage` en réponse HTTP.
  *
  * @param error - Erreur métier renvoyée par le use case.
- * @returns 404 (image introuvable, jamais 403) ou 400 (paramètres invalides, source illisible).
+ * @returns 404 (image introuvable, jamais 403), 400 (paramètres invalides, source illisible) ou 503 + `Retry-After` (serveur saturé).
  */
 export function transformErrorToHttp(error: TransformImageError): HttpError {
   switch (error.kind) {
@@ -99,6 +101,12 @@ export function transformErrorToHttp(error: TransformImageError): HttpError {
       return { status: 400, body: { error: error.kind, message: `Transformation invalide : ${error.reason}` } };
     case "CorruptedImage":
       return { status: 400, body: { error: error.kind, message: `Image illisible : ${error.reason}` } };
+    case "ServerBusy":
+      return {
+        status: 503,
+        headers: { "Retry-After": "1" },
+        body: { error: error.kind, message: "Serveur occupé par d'autres traitements, réessayez dans un instant" },
+      };
   }
 }
 

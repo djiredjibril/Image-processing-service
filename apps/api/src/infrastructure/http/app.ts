@@ -23,7 +23,6 @@ import type { ITokenService } from "../../domain/ports/token-service.js";
 import { createAuthMiddleware } from "./auth-middleware.js";
 import { isRedisUp } from "../cache/redis-client.js";
 import { errorHandler } from "./error-handler.js";
-import { createConcurrencyLimit } from "./concurrency-limit-middleware.js";
 import { byEmail, byIp, byUser, chain, createRateLimitMiddleware, RATE_LIMIT_EXPOSED_HEADERS, type RateLimitsConfig } from "./rate-limit-middleware.js";
 import { createGetImageUrlRouter } from "./routes/get-image-url-route.js";
 import { createGetImageRouter } from "./routes/get-image-route.js";
@@ -61,8 +60,6 @@ export interface AppDependencies {
   readonly corsOrigin: string;
   /** Nombre de reverse proxies de confiance devant l'API (0 = aucun) : détermine `req.ip`, donc le palier `auth`. */
   readonly trustProxyHops: number;
-  /** Transformations synchrones simultanées autorisées dans ce process (protège la RAM). */
-  readonly maxConcurrentTransforms: number;
 }
 
 /**
@@ -134,8 +131,8 @@ export function createApp(deps: AppDependencies): Express {
   app.use(createListImagesRouter(deps.listImages, readAuth));
   // Créer un job coûte autant (en quota) qu'une transformation synchrone ; le suivi (polling) est une lecture.
   const transformAuth = chain(authenticate, limit("transform", byUser));
-  // Plafond de concurrence APRÈS l'authentification et le quota : on ne refuse pas pour « serveur occupé » un appelant non autorisé.
-  app.use(createTransformImageRouter(deps.transformImage, chain(transformAuth, createConcurrencyLimit(deps.maxConcurrentTransforms))));
+  // Le plafond de transformations simultanées est appliqué DANS le use case (seulement au travail coûteux, pas aux réponses du cache).
+  app.use(createTransformImageRouter(deps.transformImage, transformAuth));
   app.use(createTransformJobRouter(deps.enqueueTransformJob, deps.getJob, transformAuth, readAuth));
 
   // Route inconnue : JSON, comme le reste de l'API (le HTML par défaut d'Express révèle le framework).

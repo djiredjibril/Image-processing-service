@@ -95,5 +95,7 @@ function describe(error: TransformImageError): string {
       return `Transformation invalide : ${error.reason}`;
     case "CorruptedImage":
       return `Image illisible : ${error.reason}`;
+    case "ServerBusy":
+      return "Serveur occupé";
   }
 }

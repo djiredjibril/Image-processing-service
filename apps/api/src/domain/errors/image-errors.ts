@@ -64,3 +64,13 @@ export class InvalidTransformationError {
 
   constructor(public readonly reason: string) {}
 }
+
+/**
+ * Le serveur a atteint son plafond de traitements simultanés : le travail est refusé (et non mis en attente).
+ *
+ * Traduite en 503 + `Retry-After` : la demande est valable, c'est le serveur qui est momentanément saturé.
+ */
+export class ServerBusyError {
+  readonly kind = "ServerBusy" as const;
+}
+
