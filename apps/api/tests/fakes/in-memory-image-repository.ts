@@ -7,8 +7,14 @@ import type { IImageRepository, ImagePage } from "../../src/domain/repositories/
 export class InMemoryImageRepository implements IImageRepository {
   readonly images: Image[] = [];
   failOnSave = false;
+  /** Nombre de prochains `save` à faire échouer (panne passagère : les suivants réussissent). */
+  failNextSaves = 0;
 
   save(image: Image): Promise<void> {
+    if (this.failNextSaves > 0) {
+      this.failNextSaves -= 1;
+      return Promise.reject(new Error("panne passagère simulée de la base"));
+    }
     if (this.failOnSave) {
       return Promise.reject(new Error("panne simulée de la base"));
     }

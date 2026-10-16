@@ -128,6 +128,15 @@ qui compare le jeton du détenteur) : une seule calcule, l'autre attend son rés
 Si Redis est indisponible, la transformation fonctionne quand même, simplement sans dédoublonnage (« fail-open »).
 `TRANSFORM_CACHE_VERSION` (dans `transform-cache-key.ts`) est à incrémenter quand le rendu des transformations change.
 
+## File d'attente et worker (phase 4)
+
+Les transformations peuvent être traitées **en arrière-plan** par un worker BullMQ (guide complet : `docs/BULLMQ.md`).
+Le statut de chaque job vit dans la table `transform_jobs` (PostgreSQL) ; Redis ne transporte que l'identifiant du job.
+Le worker est un process séparé : `npm run worker -w apps/api` (`dev:worker` pour le mode watch). Réglages :
+`QUEUE_ATTEMPTS` (3 tentatives), `QUEUE_BACKOFF_MS` (1000, doublé à chaque échec), `WORKER_CONCURRENCY` (2).
+Un échec métier (paramètres invalides, image absente) est définitif tout de suite ; une panne technique est
+retentée avec attente croissante. Si Redis est injoignable à la mise en file : `503` (la file est vitale, contrairement au cache).
+
 ## Rate limiting
 
 Chaque palier a son propre compteur Redis (fenêtre fixe de `RATE_LIMIT_WINDOW_SECONDS`, 60 s par défaut) :
