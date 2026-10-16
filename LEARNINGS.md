@@ -288,3 +288,15 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Vital, donc fail-closed.** Sans stockage, rien ne marche : on refuse de démarrer plutôt que de démarrer cassé. Les identifiants S3 viennent de
    l'environnement, ne sont jamais journalisés, et le compte de dev du `docker-compose` n'est valable qu'en local.
 
+### URLs présignées (`feat/p5-presigned-urls`)
+
+1. **Déléguer le téléchargement au stockage.** L'API n'autorise plus que « qui a le droit ? » et délivre une URL de courte durée ; le navigateur télécharge ensuite
+   directement depuis S3 : l'API ne porte plus la bande passante des images.
+2. **SigV4 en une phrase.** La signature est un HMAC calculé avec le secret (qui ne quitte jamais l'API) sur l'hôte, le chemin, la clé et la durée : le stockage refait le calcul,
+   donc modifier UN caractère (clé, durée, hôte) donne un 403, comme l'expiration. Elle est calculée localement, sans appel réseau. Vérifié contre un vrai SeaweedFS.
+3. **Une URL signée est une permission portée par l'URL** (*bearer capability*) : à ne délivrer qu'après l'autorisation (404 pour autrui, avant même de regarder si le stockage sait
+   signer), de courte durée, jamais journalisée, en `Cache-Control: no-store`, et non révocable avant l'expiration.
+4. **L'hôte est signé.** On ne peut pas signer avec une adresse interne puis la « corriger » : d'où `S3_PUBLIC_ENDPOINT` et un second client S3 réservé à la signature.
+5. **Capacité optionnelle d'un port.** Le disque ne sait pas signer : le signeur est `null` et la route répond `501 Not Implemented`, au lieu de faire semblant. Les tests
+   (mutation) ont confirmé que l'ordre « autorisation puis capacité » est bien vérifié.
+

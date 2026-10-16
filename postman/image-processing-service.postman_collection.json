@@ -32,6 +32,10 @@
     {
       "key": "jobId",
       "value": ""
+    },
+    {
+      "key": "presignedUrl",
+      "value": ""
     }
   ],
   "item": [
@@ -152,6 +156,38 @@
         "url": "{{baseUrl}}/images/{{imageId}}",
         "description": "Renvoie le fichier (flux) avec son Content-Type. 200 | 401 | 404 (image inconnue OU appartenant à un autre utilisateur : jamais 403)."
       }
+    },
+    {
+      "name": "Get image URL (presigned)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/images/{{imageId}}/url",
+        "description": "URL SIGNÉE et temporaire pour télécharger l'image DIRECTEMENT depuis le stockage S3, sans repasser par l'API ni envoyer de jeton : { url, expiresInSeconds, expiresAt }. Disponible avec STORAGE_DRIVER=s3 uniquement (501 PresignedUrlsUnsupported avec le disque local). L'URL est une PERMISSION : quiconque la possède peut lire l'image jusqu'à son expiration (défaut 300 s) ; ne pas la partager ni la journaliser. Coller l'URL dans le navigateur ou dans une requête sans autorisation pour la tester. 200 | 401 | 404 image inconnue ou d'un autre utilisateur | 429."
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "if (pm.response.code === 200) {",
+              "  pm.collectionVariables.set('presignedUrl', pm.response.json().url);",
+              "}"
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "List images",

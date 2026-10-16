@@ -347,7 +347,7 @@ Expériences à faire pour **voir** les concepts :
 6. **Arrêt propre** : créer un job sur une grande image (3000×2000 ou plus), faire Ctrl+C sur le worker pendant le traitement : il termine le job avant de quitter.
 7. **Cache** : refaire exactement le même job → le second est `completed` quasi instantanément avec le même `image.id`.
 
-## 10. Stockage : disque local et S3 ✅ (URLs présignées : branche suivante)
+## 10. Stockage : disque local et S3, URLs présignées ✅
 
 (Concepts : [`docs/S3.md`](./S3.md).)
 
@@ -378,6 +378,26 @@ endpoint non-URL, bucket < 3 caractères ou `S3_FORCE_PATH_STYLE` invalide → d
 Tests : `tests/integration/file-storage-contract.test.ts` (disque + S3), `tests/e2e/s3-storage.test.ts`, `tests/unit/config.test.ts`,
 `tests/integration/local-file-storage.test.ts`. **Prérequis : `docker compose up -d --wait`** (SeaweedFS sur le port 8333 ; bucket de test `imageservice-test`).
 
+### URLs présignées (`GET /images/:id/url`)
+
+| Variante | Attendu |
+|---|---|
+| image de l'appelant, stockage S3 | `200` `{ url, expiresInSeconds, expiresAt }`, `Cache-Control: no-store` |
+| télécharger l'URL **sans aucun en-tête** | `200`, mêmes octets que l'upload, `Content-Type` correct (`image/png`, `image/webp`) |
+| URL d'un **dérivé** | fonctionne aussi |
+| signature modifiée d'un caractère | `403` (du stockage) |
+| URL détournée vers l'objet d'une autre image du bucket | `403` |
+| durée `X-Amz-Expires` rallongée à la main | `403` (la durée fait partie de la signature) |
+| après l'expiration (test avec 2 s) | `403` ; avant : `200` |
+| image d'un autre utilisateur, id inconnu, id mal formé | `404` identiques, aucune URL délivrée |
+| sans jeton | `401` |
+| disque local (`STORAGE_DRIVER=local`) | `501 PresignedUrlsUnsupported` (et `404` pour une image d'autrui : l'autorisation passe avant) |
+| objet absent du bucket alors que la ligne existe | `404`, rien n'est signé |
+| signature | URL SigV4 vers l'endpoint **public**, sans le secret ; deux clés ou deux durées donnent deux signatures différentes |
+| configuration | `PRESIGNED_URL_TTL_SECONDS` : défaut 300, bornes 1 à 604800 ; `S3_PUBLIC_ENDPOINT` doit être une URL |
+
+Tests : `tests/unit/application/get-image-url.test.ts`, `tests/integration/s3-file-url-signer.test.ts`, section « URLs présignées » de `tests/e2e/s3-storage.test.ts` (vrai SeaweedFS).
+
 **À tester à la main** :
 
 ```bash
@@ -391,7 +411,9 @@ npm run worker -w apps/api          # le worker utilise le MÊME stockage
 2. **Voir l'objet** avec la CLI AWS (si installée) : `AWS_ACCESS_KEY_ID=imageservice AWS_SECRET_ACCESS_KEY=imageservice-secret aws --endpoint-url http://localhost:8333 s3 ls s3://imageservice-dev --recursive`.
 3. **Panne du stockage** : `docker compose stop seaweedfs` puis `GET /images/<id>` → `500` (erreur inattendue, loguée) ; au **démarrage** de l'API, elle réessaie 10 s puis refuse de démarrer. `docker compose start seaweedfs` pour réparer.
 4. **Passage disque → S3** : les images déjà envoyées en mode `local` ne sont pas dans le bucket (leurs lignes existent en base) → `GET` renvoie `404`. Pour les migrer, copier `storage/` dans le bucket en gardant les clés (voir `docs/S3.md` §4.7).
-5. **Retour en arrière** : remettre `STORAGE_DRIVER=local` ; les images envoyées en mode S3 ne sont alors plus lisibles (même raison, dans l'autre sens).
+5. **URLs présignées** (Postman : « Get image URL (presigned) », ou `curl`) : récupérer l'URL, la coller dans le navigateur **sans être connecté** → l'image s'affiche ; modifier un caractère de `X-Amz-Signature` → page d'erreur XML `SignatureDoesNotMatch` (403) ; avec `PRESIGNED_URL_TTL_SECONDS=10`, attendre 10 s → `AccessDenied`/403.
+6. **Disque local** : avec `STORAGE_DRIVER=local`, la même requête donne `501`.
+7. **Retour en arrière** : remettre `STORAGE_DRIVER=local` ; les images envoyées en mode S3 ne sont alors plus lisibles (même raison, dans l'autre sens).
 
 ## 11. Santé, CORS, configuration ✅
 
