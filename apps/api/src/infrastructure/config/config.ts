@@ -44,10 +44,26 @@ const configSchema = z.object({
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")
     .default("http://localhost:4200"),
-  STORAGE_DRIVER: z.literal("local").default("local"),
+  // Où vivent les fichiers d'images : `local` (disque, dossier STORAGE_LOCAL_DIR) ou `s3` (stockage objet compatible S3).
+  STORAGE_DRIVER: z.enum(["local", "s3"]).default("local"),
   STORAGE_LOCAL_DIR: z.string().min(1).default("storage"),
+  // Obligatoires seulement si STORAGE_DRIVER=s3 (voir la vérification plus bas). `S3_FORCE_PATH_STYLE` : adressage
+  // `http://hôte/bucket/clé`, nécessaire pour un stockage auto-hébergé (SeaweedFS, Garage, MinIO).
+  S3_ENDPOINT: z.url().optional(),
+  S3_REGION: z.string().min(1).default("us-east-1"),
+  S3_BUCKET: z.string().min(3).max(63).optional(),
+  S3_ACCESS_KEY_ID: z.string().min(1).optional(),
+  S3_SECRET_ACCESS_KEY: z.string().min(1).optional(),
+  S3_FORCE_PATH_STYLE: z.enum(["true", "false"]).default("true").transform((value) => value === "true"),
   MAX_UPLOAD_BYTES: z.coerce.number().int().positive().default(10_485_760),
   MAX_IMAGE_PIXELS_SIDE: z.coerce.number().int().positive().default(8000),
+}).superRefine((config, context) => {
+  if (config.STORAGE_DRIVER !== "s3") return;
+  for (const name of ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"] as const) {
+    if (config[name] === undefined) {
+      context.addIssue({ code: "custom", path: [name], message: `${name} est obligatoire quand STORAGE_DRIVER=s3` });
+    }
+  }
 });
 
 /** Configuration validée de l'application (immuable, entièrement typée). */

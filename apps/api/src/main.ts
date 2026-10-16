@@ -25,7 +25,7 @@ import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processo
 import { createPool } from "./infrastructure/persistence/database.js";
 import { PgImageRepository } from "./infrastructure/persistence/pg-image-repository.js";
 import { PgUserRepository } from "./infrastructure/persistence/pg-user-repository.js";
-import { LocalFileStorage } from "./infrastructure/storage/local-file-storage.js";
+import { createFileStorage } from "./infrastructure/storage/create-file-storage.js";
 import { JwtTokenService } from "./infrastructure/security/jwt-token-service.js";
 import { Argon2PasswordHasher } from "./infrastructure/security/argon2-password-hasher.js";
 
@@ -45,7 +45,7 @@ if (!(await waitForRedis(redis, 2000))) {
 const users = new PgUserRepository(pool);
 const hasher = new Argon2PasswordHasher();
 const tokens = new JwtTokenService(config.value.JWT_SECRET, config.value.JWT_EXPIRES_IN);
-const storage = new LocalFileStorage(config.value.STORAGE_LOCAL_DIR);
+const storage = await createFileStorage(config.value);
 const images = new PgImageRepository(pool);
 // Un côté de 8000 px => au plus 8000 x 8000 pixels décodés : borne la mémoire d'un traitement.
 const processor = new SharpImageProcessor({ limitInputPixels: config.value.MAX_IMAGE_PIXELS_SIDE ** 2 });

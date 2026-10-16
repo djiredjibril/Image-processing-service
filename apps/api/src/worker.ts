@@ -18,7 +18,7 @@ import { PgImageRepository } from "./infrastructure/persistence/pg-image-reposit
 import { PgTransformJobRepository } from "./infrastructure/persistence/pg-transform-job-repository.js";
 import { createWorkerConnection } from "./infrastructure/queue/bull-connection.js";
 import { startTransformWorker } from "./infrastructure/queue/transform-worker.js";
-import { LocalFileStorage } from "./infrastructure/storage/local-file-storage.js";
+import { createFileStorage } from "./infrastructure/storage/create-file-storage.js";
 
 const config = loadConfig(process.env);
 if (isErr(config)) {
@@ -36,7 +36,7 @@ const images = new PgImageRepository(pool);
 const processor = new SharpImageProcessor({ limitInputPixels: config.value.MAX_IMAGE_PIXELS_SIDE ** 2 });
 const transformImage = new TransformImage(
   images,
-  new LocalFileStorage(config.value.STORAGE_LOCAL_DIR),
+  await createFileStorage(config.value),
   processor,
   new RedisTransformCache(cacheRedis, config.value.CACHE_TTL_SECONDS),
   { maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE },
