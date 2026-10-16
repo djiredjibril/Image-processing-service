@@ -594,5 +594,41 @@ for r in 10 20 30; do curl -s -o /dev/null -X POST localhost:3000/images/$IMG/jo
 docker compose exec redis redis-cli MONITOR          # Ctrl+C pour arrêter ; ne JAMAIS faire ça en production
 ```
 
-> La page « Supervision » de l'application web (graphique en direct, déclencheur de charge) est dans la branche suivante.
+### La page « Supervision » de l'application web (`/monitoring`)
+
+**Implémentation** : `core/monitoring/` (`monitoring.service.ts` : `watch()` = un relevé immédiat puis un par seconde, `exhaustMap`, **une erreur devient un relevé en échec et la surveillance continue** ;
+`monitoring-utils.ts` : formats, historique d'une minute, débit, tracé du graphique, paramètres de charge, toutes **pures**) et `features/monitoring/monitoring.ts` (la page).
+
+**Tests automatisés** (`npm test -w apps/web`, 164 tests) :
+
+| Sujet | Variantes vérifiées |
+|---|---|
+| Fonctions pures | octets (`2,5 Mo`), durées (`3 h 05 min`), taux de cache (`null` sans transformation, pas de division par zéro), historique plafonné à 60 relevés, débit (jobs terminés + échoués par seconde ; **jamais négatif** si un compteur diminue), tracé SVG (0 en bas, max en haut, échelle minimale, reste dans le cadre), paramètres de charge valides et **différents** à chaque appel |
+| `MonitoringService` | route, relevé immédiat puis périodique, erreur HTTP → relevé en échec avec le message de l'API **et la surveillance continue**, API injoignable, pas d'empilement de requêtes, arrêt au désabonnement |
+| Page | chargement, chiffres de la file **qui changent** à chaque relevé, Redis (version, mémoire, durée, clés, `+` si plafonné), taux de cache et compteurs, **bandeau « aucun worker »** (et son absence sans file), Redis/file indisponibles en rouge, erreur de lecture puis **rétablissement** sans perdre les dernières valeurs, jobs de l'utilisateur (statuts, tentatives, lien, échec), historique à 2 courbes, débit |
+| Pause | arrête les requêtes (désabonnement), reprend, et s'arrête à la destruction de la page |
+| Générateur | seulement les images **originales** ; N jobs aux paramètres différents ; plafonné à 50 (1 au minimum) ; **s'arrête à la première erreur** (429) en disant combien ont été envoyés ; bouton désactivé pendant l'envoi ; sans image : invitation |
+
+**À tester à la main** (4 terminaux ; `docker compose up -d --wait` ; pour la démonstration, relever le quota de transformations) :
+
+```bash
+RATE_LIMIT_TRANSFORM=1000 PORT=3001 npm run dev -w apps/api      # terminal 1
+npm run worker -w apps/api                                        # terminal 2
+npm start -w apps/web                                             # terminal 3 → http://localhost:4200, menu « Supervision »
+docker compose exec redis redis-cli MONITOR                       # terminal 4 (optionnel) : les commandes Redis en direct
+```
+
+1. **État initial** : Redis « en ligne », file « disponible », **1 worker**, compteurs à 0, « Aucun job pour l'instant ». L'heure « Mis à jour à » avance chaque seconde.
+2. **La file travaille** : dans « Générateur de charge », envoyer 30 jobs : « En attente » monte, « En cours » oscille (2 = `WORKER_CONCURRENCY`), « Terminés » augmente, le **graphique** montre la file se remplir puis se vider, le **débit** affiche des jobs/s, et « Vos derniers jobs » passe de « en file » à « en cours » à « terminé » avec un lien vers le résultat. Dans le terminal 4 : `BRPOPLPUSH`/`BZPOPMIN`, `HSET`, scripts Lua...
+3. **Sans worker** : arrêter le worker (Ctrl+C) → « Workers connectés » tombe à 0 et le **bandeau jaune** apparaît ; envoyer 10 jobs → « En attente » reste à 10 ; relancer le worker → la file se vide d'elle-même et le bandeau disparaît.
+4. **Panne technique et nouvelle tentative** (avancé) : pendant un traitement, `docker compose stop postgres` brièvement → « Nouvelle tentative » (`delayed`) augmente, des jobs affichent « 2 tentatives » ; `docker compose start postgres` pour réparer.
+5. **Cache** : sur la page d'une image, refaire 3 fois la même transformation synchrone → « Réponses servies par le cache » +2, « Calculs réels » +1, taux de cache qui monte. Les calculs du **worker** comptent aussi.
+6. **Quota** : relancer l'API avec `RATE_LIMIT_TRANSFORM=5`, générer 20 jobs → message « 5 job(s) envoyé(s), puis arrêt : Trop de requêtes… », et « Requêtes refusées (429) » augmente.
+7. **Pause** : « Pause » → l'onglet Réseau n'émet plus de `GET /monitoring/overview` ; « Reprendre » → ils repartent.
+8. **Panne de Redis** : `docker compose stop redis` → Redis et file passent en **rouge** (« indisponible »), mais la page continue de répondre ; `docker compose start redis` → retour à la normale seul (les compteurs d'activité repartent de zéro).
+9. **Panne de l'API** : arrêter l'API → bandeau rouge « Impossible de joindre l'API », dernières valeurs conservées ; la relancer → il disparaît seul.
+10. **Confidentialité** : se connecter avec un **second compte** : il voit les **mêmes** chiffres de file (la charge est globale) mais **pas** les jobs du premier compte.
+11. **Mobile** : fenêtre à ≈ 400 px : les cartes passent en colonnes, rien ne déborde.
+
+> Comme pour la section 15, je n'ai pas pu ouvrir de navigateur : build, 164 tests et les relevés réels de l'API (4 jobs traités par un vrai worker : `completed: 4`, `workers: 1`, `cache_miss: 3`, `cache_hit: 1`) sont vérifiés ; **l'aspect visuel et ces parcours sont à valider à l'œil**.
 

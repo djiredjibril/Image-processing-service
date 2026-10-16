@@ -348,3 +348,12 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 4. **Confidentialité : global ≠ personnel.** Les chiffres de charge sont globaux (aucune donnée d'autrui), la liste de jobs est celle de l'appelant ; ni identifiant de worker, ni adresse, ni clé Redis. Un outil comme Bull Board, lui, expose les DONNÉES des jobs et exige un rôle d'administrateur.
 5. **Un test qui passait pour de mauvaises raisons.** Mon test « un worker traite le job » utilisait un stockage différent de celui de l'envoi : le job échouait en « image introuvable » (échec métier), que BullMQ compte comme « completed » : le test passait. Corrigé en vérifiant le statut RÉEL en base. Rappel de la phase 4 : « completed » côté BullMQ ≠ « réussi ».
 
+### Page « Supervision » (`feat/web-monitoring`)
+
+1. **Le « temps réel » par polling.** Un relevé par seconde (`timer` + `exhaustMap`) suffit à voir une file se remplir et se vider ; les alternatives (SSE, WebSocket) demandent une authentification adaptée (`EventSource` ne peut pas envoyer l'en-tête `Authorization`) et une connexion longue par client.
+   Le polling reste simple, borné par le quota « lecture » (60 requêtes/min ≪ 300) et robuste : chaque relevé est indépendant.
+2. **Une surveillance ne doit jamais mourir.** Une erreur HTTP devient une VALEUR (`{ ok: false, message }`) et non une erreur du flux : la page affiche la panne, garde les dernières valeurs et se rétablit seule. Avec une erreur de flux, `timer` s'arrêterait au premier échec.
+3. **Calculer un débit sans se tromper.** Débit = (jobs terminés + échoués) entre deux relevés ÷ temps écoulé ; un compteur qui diminue (Redis vidé) donne 0, jamais un débit négatif ; pas de division par zéro pour le taux de cache. Des fonctions pures, testées valeur par valeur.
+4. **Un graphique sans bibliothèque.** Une `<polyline>` SVG dont les points viennent d'une fonction pure (`sparklinePoints`) : 0 en bas, maximum en haut, échelle minimale (un « 1 » ne doit pas faire un pic plein hauteur). Moins de 20 lignes, aucune dépendance.
+5. **Rendre l'invisible visible, avec un levier.** Un tableau de bord vide ne montre rien : le générateur de charge (paramètres tous différents pour éviter le cache) permet de VOIR la file travailler ; il s'arrête à la première erreur (429) au lieu d'insister contre une limite.
+

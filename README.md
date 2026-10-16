@@ -52,7 +52,8 @@ npm run dev:web   # application Angular, http://localhost:4200 (dans un second t
 Angular 21 (composants standalone, signals, mode sans zone) + Tailwind CSS v4. Pages : connexion,
 inscription, galerie paginée (les images dérivées portent un badge), envoi d'une image, visualisation, **transformation d'une image** (rotation, retournement,
 miroir, redimensionnement, recadrage, filtre, filigrane, format, qualité), en mode synchrone ou **en arrière-plan** (job BullMQ suivi par « polling » toutes les
-secondes), et **lien de téléchargement temporaire** (URL signée S3). Elle appelle l'API sur
+secondes), et **lien de téléchargement temporaire** (URL signée S3), et une page **Supervision** (`/monitoring`) : état de Redis, file BullMQ (en attente / en cours / terminés / échoués),
+workers connectés, graphique de la dernière minute, débit, taux de cache, compteurs de quota (429), vos derniers jobs et un **générateur de charge** pour voir la file travailler. Elle appelle l'API sur
 `http://localhost:3001` (voir `apps/web/src/app/core/api-config.ts`) ; l'API autorise l'origine
 `http://localhost:4200` via `CORS_ORIGIN`. Le jeton JWT est conservé dans `localStorage`
 (compromis d'apprentissage, voir `LEARNINGS.md`).

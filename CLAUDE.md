@@ -208,3 +208,4 @@ Déploiement cloud, paiement, OAuth/social login, import d'image par URL
 > connexion/inscription, upload, galerie, visualisation. Aucun autre frontend.
 > Extension actée sur demande explicite du développeur (branche `feat/web-transformations`) : l'application web expose aussi les
 > transformations (synchrones et en arrière-plan avec suivi de job) et le lien de téléchargement temporaire. Rien d'autre.
+> Page « Supervision » ajoutée sur demande explicite du développeur (branches `feat/monitoring-api` et `feat/web-monitoring`) : voir Redis et BullMQ en action.
