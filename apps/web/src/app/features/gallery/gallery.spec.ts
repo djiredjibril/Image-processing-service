@@ -82,4 +82,13 @@ describe('Gallery', () => {
     const el = await render();
     expect(el.querySelector('[role="alert"]')?.textContent).toContain('joindre');
   });
+
+  it('signale les images dérivées (résultats de transformation) par un badge, pas les originaux', async () => {
+    const derived: ImageSummary = { ...summary('d'), originalId: 'a' };
+    list.mockReturnValue(of({ items: [summary('a'), derived], page: 1, limit: GALLERY_PAGE_SIZE, total: 2 }));
+    const el = await render();
+    const badges = Array.from(el.querySelectorAll('li')).map((li) => li.textContent.includes('dérivée'));
+    expect(badges).toEqual([false, true]);
+  });
 });
+
