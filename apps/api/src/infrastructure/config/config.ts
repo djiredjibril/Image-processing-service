@@ -35,6 +35,11 @@ const configSchema = z.object({
   RATE_LIMIT_UPLOAD: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_TRANSFORM: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_READ: z.coerce.number().int().positive().default(300),
+  // File d'attente (BullMQ) : nombre total de tentatives par job, délai initial avant une nouvelle tentative (x2 à
+  // chaque échec), et nombre de jobs traités en parallèle par worker (chaque traitement sharp peut prendre ~1 Go de RAM).
+  QUEUE_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
+  QUEUE_BACKOFF_MS: z.coerce.number().int().min(0).default(1000),
+  WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(2),
   CORS_ORIGIN: z
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")
