@@ -32,6 +32,9 @@ const configSchema = z.object({
   // Rate limiting : requêtes autorisées par fenêtre (RATE_LIMIT_WINDOW_SECONDS, 60 s par défaut) et par palier.
   RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
   RATE_LIMIT_AUTH: z.coerce.number().int().positive().default(10),
+  // Tentatives de connexion par ADRESSE E-MAIL visée (en plus de la limite par IP) : fenêtre plus longue (15 min par défaut).
+  RATE_LIMIT_LOGIN_EMAIL: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS: z.coerce.number().int().positive().default(900),
   RATE_LIMIT_UPLOAD: z.coerce.number().int().positive().default(20),
   RATE_LIMIT_TRANSFORM: z.coerce.number().int().positive().default(10),
   RATE_LIMIT_READ: z.coerce.number().int().positive().default(300),
@@ -40,6 +43,11 @@ const configSchema = z.object({
   QUEUE_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(3),
   QUEUE_BACKOFF_MS: z.coerce.number().int().min(0).default(1000),
   WORKER_CONCURRENCY: z.coerce.number().int().min(1).max(16).default(2),
+  // Nombre de reverse proxies de confiance devant l'API (0 = aucun : l'IP du client est celle de la connexion TCP). À régler
+  // exactement : trop bas, tous les clients paraissent avoir l'IP du proxy ; trop haut, un client peut falsifier son IP (X-Forwarded-For).
+  TRUST_PROXY: z.coerce.number().int().min(0).max(10).default(0),
+  // Transformations synchrones simultanées dans CE process (au-delà : 503). Chaque traitement peut prendre ~1 Go de RAM.
+  MAX_CONCURRENT_TRANSFORMS: z.coerce.number().int().min(1).max(64).default(2),
   CORS_ORIGIN: z
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")

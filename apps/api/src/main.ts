@@ -19,6 +19,7 @@ import { GetJob } from "./application/use-cases/get-job.js";
 import { createQueueConnection } from "./infrastructure/queue/bull-connection.js";
 import { BullMqTransformJobQueue } from "./infrastructure/queue/bullmq-transform-job-queue.js";
 import { PgTransformJobRepository } from "./infrastructure/persistence/pg-transform-job-repository.js";
+import { configureServerTimeouts } from "./infrastructure/http/server-timeouts.js";
 import { RedisRateLimiter } from "./infrastructure/cache/redis-rate-limiter.js";
 import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
 import { createApp } from "./infrastructure/http/app.js";
@@ -81,17 +82,22 @@ const app = createApp({
   rateLimiter: new RedisRateLimiter(redis),
   rateLimits: {
     auth: { limit: config.value.RATE_LIMIT_AUTH, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
+    loginEmail: { limit: config.value.RATE_LIMIT_LOGIN_EMAIL, windowSeconds: config.value.RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS },
     upload: { limit: config.value.RATE_LIMIT_UPLOAD, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
     transform: { limit: config.value.RATE_LIMIT_TRANSFORM, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
     read: { limit: config.value.RATE_LIMIT_READ, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
   },
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
   corsOrigin: config.value.CORS_ORIGIN,
+  trustProxyHops: config.value.TRUST_PROXY,
+  maxConcurrentTransforms: config.value.MAX_CONCURRENT_TRANSFORMS,
 });
 
 const server = app.listen(config.value.PORT, () => {
   console.log(`Serveur démarré sur le port ${String(config.value.PORT)}`);
 });
+
+configureServerTimeouts(server);
 
 /** Arrêt propre : on ferme le serveur HTTP puis le pool de connexions. */
 function shutdown(): void {

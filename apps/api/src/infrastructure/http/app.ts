@@ -5,6 +5,7 @@
  * (pas de singleton) pour que les tests E2E puissent injecter la base de test.
  */
 import cors from "cors";
+import helmet from "helmet";
 import express, { type Express } from "express";
 import type { Redis } from "ioredis";
 import type pg from "pg";
@@ -22,7 +23,8 @@ import type { ITokenService } from "../../domain/ports/token-service.js";
 import { createAuthMiddleware } from "./auth-middleware.js";
 import { isRedisUp } from "../cache/redis-client.js";
 import { errorHandler } from "./error-handler.js";
-import { byIp, byUser, chain, createRateLimitMiddleware, RATE_LIMIT_EXPOSED_HEADERS, type RateLimitsConfig } from "./rate-limit-middleware.js";
+import { createConcurrencyLimit } from "./concurrency-limit-middleware.js";
+import { byEmail, byIp, byUser, chain, createRateLimitMiddleware, RATE_LIMIT_EXPOSED_HEADERS, type RateLimitsConfig } from "./rate-limit-middleware.js";
 import { createGetImageUrlRouter } from "./routes/get-image-url-route.js";
 import { createGetImageRouter } from "./routes/get-image-route.js";
 import { createListImagesRouter } from "./routes/list-images-route.js";
@@ -57,6 +59,10 @@ export interface AppDependencies {
   readonly maxUploadBytes: number;
   /** Unique origine navigateur autorisée à appeler l'API (CORS). */
   readonly corsOrigin: string;
+  /** Nombre de reverse proxies de confiance devant l'API (0 = aucun) : détermine `req.ip`, donc le palier `auth`. */
+  readonly trustProxyHops: number;
+  /** Transformations synchrones simultanées autorisées dans ce process (protège la RAM). */
+  readonly maxConcurrentTransforms: number;
 }
 
 /**
@@ -70,6 +76,12 @@ export interface AppDependencies {
  */
 export function createApp(deps: AppDependencies): Express {
   const app = express();
+  // Ne jamais faire confiance à `X-Forwarded-For` par défaut : un client pourrait y mettre n'importe quelle IP pour contourner le
+  // palier `auth`. On ne lit cet en-tête qu'à travers le nombre EXACT de proxies de confiance déclaré par la configuration.
+  app.set("trust proxy", deps.trustProxyHops);
+  // En-têtes de sécurité (X-Content-Type-Options: nosniff, pas de X-Powered-By, etc.). `same-site` : l'app web, sur une autre origine
+  // du même site (ex. :4200 et :3000), peut charger les images ; un autre site, non.
+  app.use(helmet({ crossOriginResourcePolicy: { policy: "same-site" } }));
   // CORS en tout premier : une requête « preflight » (OPTIONS) n'a pas d'en-tête Authorization
   // et doit être acceptée avant l'authentification. Une SEULE origine est autorisée (jamais `*`).
   // Pas de `credentials` : l'API s'authentifie par jeton Bearer, pas par cookie.
@@ -108,7 +120,7 @@ export function createApp(deps: AppDependencies): Express {
     createRateLimitMiddleware({ limiter: deps.rateLimiter, scope, policy: deps.rateLimits[scope], identify });
   const authLimiter = limit("auth", byIp);
   app.post("/register", authLimiter);
-  app.post("/login", authLimiter);
+  app.post("/login", authLimiter, limit("loginEmail", byEmail));
   app.use(createRegisterRouter(deps.registerUser));
   app.use(createLoginRouter(deps.loginUser));
 
@@ -122,9 +134,14 @@ export function createApp(deps: AppDependencies): Express {
   app.use(createListImagesRouter(deps.listImages, readAuth));
   // Créer un job coûte autant (en quota) qu'une transformation synchrone ; le suivi (polling) est une lecture.
   const transformAuth = chain(authenticate, limit("transform", byUser));
-  app.use(createTransformImageRouter(deps.transformImage, transformAuth));
+  // Plafond de concurrence APRÈS l'authentification et le quota : on ne refuse pas pour « serveur occupé » un appelant non autorisé.
+  app.use(createTransformImageRouter(deps.transformImage, chain(transformAuth, createConcurrencyLimit(deps.maxConcurrentTransforms))));
   app.use(createTransformJobRouter(deps.enqueueTransformJob, deps.getJob, transformAuth, readAuth));
 
+  // Route inconnue : JSON, comme le reste de l'API (le HTML par défaut d'Express révèle le framework).
+  app.use((_req, res) => {
+    res.status(404).json({ error: "NotFound", message: "Route introuvable" });
+  });
   app.use(errorHandler);
   return app;
 }

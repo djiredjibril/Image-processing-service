@@ -4,6 +4,7 @@
  * Couche : infrastructure (HTTP). Traduit la décision d'un `IRateLimiter` en réponse HTTP : `429` avec
  * `Retry-After` si la limite est dépassée, et en-têtes `RateLimit-*` informatifs sinon.
  */
+import { createHash } from "node:crypto";
 import type { Request, RequestHandler } from "express";
 import type { IRateLimiter, RateLimitPolicy } from "../../domain/ports/rate-limiter.js";
 
@@ -11,6 +12,8 @@ import type { IRateLimiter, RateLimitPolicy } from "../../domain/ports/rate-limi
 export interface RateLimitsConfig {
   /** `/register` et `/login`, comptés par adresse IP (l'utilisateur n'est pas encore connu). */
   readonly auth: RateLimitPolicy;
+  /** `/login`, compté par ADRESSE E-MAIL visée : freine le brute-force distribué sur un compte, quelle que soit l'IP. */
+  readonly loginEmail: RateLimitPolicy;
   /** `POST /images`, compté par utilisateur. */
   readonly upload: RateLimitPolicy;
   /** `POST /images/:id/transform`, compté par utilisateur (opération la plus coûteuse). */
@@ -70,6 +73,19 @@ export function createRateLimitMiddleware(options: RateLimitMiddlewareOptions): 
 
 /** Identité = adresse IP de l'appelant (paliers sans utilisateur connu). */
 export const byIp = (req: Request): string | null => req.ip ?? null;
+
+/**
+ * Identité = adresse e-mail du corps de la requête (normalisée), sous forme d'EMPREINTE.
+ *
+ * L'empreinte (SHA-256, tronquée) évite de stocker des adresses e-mail en clair dans les clés Redis (donnée personnelle visible
+ * par quiconque peut lister les clés). La normalisation (espaces, minuscules) empêche de contourner la limite avec `A@x.com`.
+ * À placer APRÈS `express.json()` ; sans e-mail exploitable (corps invalide), la requête n'est pas comptée ici (le 400 suffit).
+ */
+export const byEmail = (req: Request): string | null => {
+  const email = (req.body as { email?: unknown } | undefined)?.email;
+  if (typeof email !== "string" || email.length === 0 || email.length > 254) return null;
+  return createHash("sha256").update(email.trim().toLowerCase()).digest("hex").slice(0, 32);
+};
 
 /** Identité = utilisateur authentifié (à placer APRÈS le middleware d'authentification). */
 export const byUser = (req: Request): string | null => req.auth?.userId ?? null;
