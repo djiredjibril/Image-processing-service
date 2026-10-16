@@ -20,7 +20,7 @@
 | Injection dans le filigrane (SVG/XML) | Liste blanche de caractères + échappement | `watermark.ts` | 2 |
 | Appeler l'API depuis un site malveillant | CORS : **une seule origine exacte**, jamais `*` | `app.ts` | 1 |
 | Inonder l'API de requêtes | Rate limiting par palier (IP, utilisateur) | `rate-limit-middleware.ts` | 3 |
-| Épuiser la RAM avec des traitements lourds en parallèle | **Plafond de concurrence** (503) + file BullMQ à concurrence basse | `concurrency-limit-middleware.ts` | 4, **6** |
+| Épuiser la RAM avec des traitements lourds en parallèle | **Plafond de concurrence** (503) + file BullMQ à concurrence basse | `transform-image.ts` + `local-work-slots.ts` | 4, **6** |
 | Brute-force d'un compte depuis plein d'IP | **Limite de connexion par e-mail** (empreinte, 15 min) | `rate-limit-middleware.ts` | **6** |
 | Falsifier son IP (`X-Forwarded-For`) pour contourner le rate limiting | **`TRUST_PROXY`** : on ne croit l'en-tête qu'à travers N proxies déclarés | `app.ts`, `config.ts` | **6** |
 | Garder des connexions ouvertes sans rien envoyer (slowloris) | **Délais** serveur : en-têtes, requête, keep-alive | `server-timeouts.ts` | **6** |
@@ -61,10 +61,12 @@ la limite, mais le compte reçoit 10 000 essais. D'où une seconde limite, **par
 ### 2.3 Plafond de concurrence (protéger la mémoire)
 Le rate limiting borne le **nombre par minute**, pas le **nombre en même temps** : 10 transformations de 49 Mpx lancées ensemble, ce sont ~10 Go de RAM sans qu'aucun quota soit dépassé.
 `MAX_CONCURRENT_TRANSFORMS` (2) limite les transformations **synchrones** simultanées par process ; au-delà : `503 ServerBusy` + `Retry-After: 1`, **immédiat**.
+- **Protéger la ressource rare, pas la route.** Le plafond (port `IWorkSlots`, implémentation `LocalWorkSlots`) est pris **dans le use case, autour du seul calcul coûteux** (lecture, sharp, écriture). Une réponse servie
+  par le cache ne le consomme jamais : une première version, posée en middleware sur toute la route, refusait des lectures de cache qui ne coûtent rien (découvert par le test de charge, voir `docs/LOAD_TESTING.md`).
 - **Refuser plutôt qu'attendre** : une file en mémoire garderait les connexions et corps de requête ouverts, donc la RAM occupée.
-- Placé **après** l'authentification et le quota : un anonyme reçoit `401`, pas `503`.
-- La place est rendue sur l'événement `close` : à la fin de la réponse **ou** si le client coupe la connexion.
-- La voie **asynchrone** (BullMQ, phase 4) est l'autre réponse : sa concurrence est réglée côté worker (`WORKER_CONCURRENCY`).
+- Pris **après** l'authentification, le quota et le cache : un anonyme reçoit `401`, une réponse en cache est servie.
+- La place est rendue dans un `finally` (succès, échec métier ou panne technique), et le refus libère aussi le verrou du cache.
+- La voie **asynchrone** (BullMQ, phase 4) est l'autre réponse : sa concurrence est réglée côté worker (`WORKER_CONCURRENCY`, plafond « sans limite » dans le worker car BullMQ borne déjà).
 - Limite connue : le compteur est **par process**. Avec 3 instances de l'API, le plafond global est 3×.
 
 ### 2.4 Délais du serveur (slowloris)
@@ -79,6 +81,7 @@ Quelques en-têtes qui ferment des familles d'attaques côté navigateur : `X-Co
 Une API JSON n'a pas besoin de plus ; les 404 sont en JSON (la page HTML par défaut d'Express révèle le framework).
 
 ### 2.6 Hygiène des journaux
+Les téléchargements interrompus par le client (onglet fermé) ne sont pas non plus journalisés comme des erreurs : ce n'en sont pas, et de fausses alertes en série noieraient les vraies.
 Un test exécute les parcours (inscription, connexion réussie et ratée, JSON malformé, doublon, jeton falsifié) en **capturant la console**, puis vérifie qu'aucun mot de passe, jeton
 ni empreinte n'y figure. Un journal est lu par beaucoup de monde et conservé longtemps : y trouver un secret est une fuite.
 

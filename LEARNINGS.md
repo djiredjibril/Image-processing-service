@@ -315,3 +315,13 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    (déterministe). Le test des délais ne distinguait pas `headersTimeout` de `requestTimeout` : réglé pour qu'un seul agisse à la fois. Autre piège : un `keys()` ioredis avec `keyPrefix` ne renvoyait rien, donc un
    test « zéro clé » passait à vide ; un témoin positif l'a démasqué.
 
+### Tests de charge (`feat/p6-load-tests`)
+
+1. **Charge ≠ justesse.** Un test de charge mesure le débit (req/s), la latence en PERCENTILES (p99, pas la moyenne qui cache les extrêmes) et le comportement à saturation. autocannon (Node, sans binaire) pilote N connexions
+   pendant D secondes ; k6 est l'alternative plus complète. Les chiffres sont relatifs (machine, client sur la même machine) : on compare des scénarios, avant/après un changement.
+2. **Protéger la ressource rare, pas la route.** Mon plafond de concurrence, posé en middleware sur toute la route, refusait des réponses servies par le cache (60 215 × 503 pour 3 641 succès) parce que 20 clients arrivaient ensemble.
+   Déplacé dans le use case autour du seul calcul coûteux, via un port (`IWorkSlots`) : le cache n'y touche jamais. Aucun des ~600 tests n'avait vu ce défaut.
+3. **Un bon système refuse vite.** Sous saturation, les traitements en trop reçoivent un 503 en ~2 ms au lieu de s'empiler : le serveur reste réactif (`/health` p99 = 2 ms pendant que sharp sature le CPU : sharp travaille dans le pool de threads, pas dans la boucle d'événements).
+4. **Le bruit des journaux est un défaut.** Un client qui coupe un téléchargement (`ERR_STREAM_PREMATURE_CLOSE`) n'est pas une erreur serveur ; sous charge chaque téléchargement interrompu produisait une fausse alerte avec sa trace, qui noie les vraies.
+5. **Savoir ce que mesure un chiffre.** `lecture-image` : 24 req/s mais 124 Mo/s : limité par la copie des octets, pas par le serveur. Et c'est exactement ce que les URLs présignées évitent. Les débits très bas du login sont voulus (argon2).
+
