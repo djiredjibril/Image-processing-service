@@ -83,7 +83,7 @@ npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de
 | POST | `/images` | Authentifié. Multipart, champ `image` (JPEG, PNG ou WebP ; 10 Mo et 8000 px par côté par défaut). 201 `{ id, format, sizeBytes, width, height, createdAt }`, 400 fichier manquant ou illisible, 401, 413 trop lourd ou trop grand, 415 format non supporté. Le type est vérifié par les magic bytes |
 | GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
 | GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
-| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). `201` + `X-Cache: MISS` (dérivé créé) ou `200` + `X-Cache: HIT` (déjà produit : renvoyé depuis le cache, sans retraitement), corps `{ id, originalId, format, sizeBytes, width, height, createdAt }` ; 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur) |
+| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). `201` + `X-Cache: MISS` (dérivé créé) ou `200` + `X-Cache: HIT` (déjà produit : renvoyé depuis le cache, sans retraitement), corps `{ id, originalId, format, sizeBytes, width, height, createdAt }` ; 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur), 429 (limite dépassée) |
 
 Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 
@@ -128,9 +128,28 @@ qui compare le jeton du détenteur) : une seule calcule, l'autre attend son rés
 Si Redis est indisponible, la transformation fonctionne quand même, simplement sans dédoublonnage (« fail-open »).
 `TRANSFORM_CACHE_VERSION` (dans `transform-cache-key.ts`) est à incrémenter quand le rendu des transformations change.
 
+## Rate limiting
+
+Chaque palier a son propre compteur Redis (fenêtre fixe de `RATE_LIMIT_WINDOW_SECONDS`, 60 s par défaut) :
+
+| Palier | Routes | Compté par | Limite par défaut |
+|---|---|---|---|
+| `auth` | `POST /register`, `POST /login` (compteur commun) | adresse IP | 10 / min (`RATE_LIMIT_AUTH`) |
+| `upload` | `POST /images` | utilisateur | 20 / min (`RATE_LIMIT_UPLOAD`) |
+| `transform` | `POST /images/:id/transform` (HIT compris) | utilisateur | 10 / min (`RATE_LIMIT_TRANSFORM`) |
+| `read` | `GET /images`, `GET /images/:id` (compteur commun) | utilisateur | 300 / min (`RATE_LIMIT_READ`) |
+
+Au-delà de la limite : `429 Too Many Requests`, corps `{ "error": "TooManyRequests", ... }` et en-tête `Retry-After`
+(secondes). Toutes les réponses des routes limitées portent `RateLimit-Limit`, `RateLimit-Remaining` et `RateLimit-Reset`
+(secondes avant la réinitialisation) ; CORS les expose au navigateur. Le comptage est atomique (script Lua `INCR` + `PEXPIRE`).
+Les paliers par utilisateur s'appliquent **après** l'authentification : une requête sans jeton valide reçoit 401 et ne consomme
+aucun quota. Fail-open : si Redis est arrêté, aucune limite n'est appliquée. Limite connue de la fenêtre fixe : un client peut
+enchaîner jusqu'à 2× la limite à cheval sur deux fenêtres. Derrière un reverse proxy, `req.ip` serait l'IP du proxy
+(`trust proxy` à configurer : phase 6).
+
 ## Redis
 
-Redis (cache et rate limiting, phase 3) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des
+Redis (cache et rate limiting, phase 3 ; guide : `docs/REDIS.md`) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des
 données jetables. Base 0 en développement (`REDIS_URL`), base 1 pour les tests (`TEST_REDIS_URL`) ; les tests ne
 touchent jamais à la base 0. Toutes les clés sont préfixées `ips:`.
 
@@ -139,5 +158,5 @@ même (`/health` indique « degraded », un message est écrit dans les logs) et
 
 ## Variables d'environnement
 
-Voir `apps/api/.env.example`. `CORS_ORIGIN` (défaut `http://localhost:4200`) est l'unique origine
+Voir `apps/api/.env.example` (dont les `RATE_LIMIT_*`). `CORS_ORIGIN` (défaut `http://localhost:4200`) est l'unique origine
 navigateur autorisée à appeler l'API : une origine exacte, jamais `*`. L'application refuse de démarrer si la configuration est invalide.

@@ -38,7 +38,7 @@ Trois besoins que PostgreSQL gère mal ou trop lentement :
    et de la RAM) quand on redemande exactement la même.
 2. **Verrou distribué** : si 8 requêtes identiques arrivent en même temps, n'en traiter
    qu'une seule (anti « cache stampede »).
-3. **Rate limiting** (branche 3, à venir) : compter les requêtes par minute et par
+3. **Rate limiting** : compter les requêtes par minute et par
    utilisateur. Il faut un compteur très rapide, atomique, qui s'efface tout seul.
 
 Les trois reposent sur deux propriétés de Redis : **la vitesse** et **l'expiration
@@ -137,19 +137,32 @@ espacée. Une commande Redis qui échoue ne bloque jamais une requête plus d'un
 À l'inverse, on parle de **fail-closed** quand on refuse tout si la dépendance est
 tombée. Pour du cache, ce serait absurde : on choisit fail-open.
 
-## 6. Rate limiting (branche 3, pas encore implémentée)
+## 6. Rate limiting ✅
 
-Objectif : limiter le nombre de requêtes par fenêtre de temps et répondre `429 Too Many
-Requests` au-delà, avec `Retry-After`. Principe « fenêtre fixe » :
+Objectif : limiter le nombre de requêtes par fenêtre de temps et répondre `429 Too Many Requests` au-delà,
+avec `Retry-After`. Principe « fenêtre fixe », exécuté **d'un bloc** (script Lua, donc atomique) :
 
 ```
-INCR  ips:ratelimit:<qui>:<fenêtre>     → 1, 2, 3...  (atomique)
-PEXPIRE  ...  60000                      → la fenêtre se réinitialise toute seule
+INCR  ips:ratelimit:<palier>:<qui>        → 1, 2, 3...
+si c'est la 1re requête : PEXPIRE ... 60000   → la fenêtre se réinitialise toute seule
+PTTL  ...                                  → temps restant (pour Retry-After)
 ```
 
-`INCR` est atomique : même avec 1000 requêtes simultanées, personne ne « rate » un
-comptage. Les paliers prévus : authentification par IP, upload / transformation / lecture
-par utilisateur. Cette section sera mise à jour une fois la branche faite.
+`INCR` est atomique : même avec 1000 requêtes simultanées, personne ne « rate » un comptage. Mettre `INCR` et
+`PEXPIRE` dans le même script évite qu'un crash entre les deux laisse une clé sans expiration (utilisateur bloqué à vie).
+
+| Palier | Compté par | Défaut |
+|---|---|---|
+| `auth` (`/register`, `/login`) | IP | 10 / min |
+| `upload` | utilisateur | 20 / min |
+| `transform` | utilisateur | 10 / min |
+| `read` (liste et lecture) | utilisateur | 300 / min |
+
+Fichiers : port `domain/ports/rate-limiter.ts`, implémentation `infrastructure/cache/redis-rate-limiter.ts`,
+middleware `infrastructure/http/rate-limit-middleware.ts`, branchement dans `http/app.ts`. Réglable avec les
+variables `RATE_LIMIT_*`. Fail-open : Redis tombé → aucune limite appliquée (le limiteur renvoie `null`).
+
+Voir ses clés en direct : faire 3 requêtes puis `KEYS ips:ratelimit:*` et `TTL ips:ratelimit:read:<id>`.
 
 ## 7. Commandes pour explorer toi-même
 

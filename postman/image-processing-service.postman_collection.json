@@ -54,7 +54,7 @@
           "mode": "raw",
           "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
         },
-        "description": "201 { id, email } | 400 validation ou JSON malformé | 409 e-mail déjà pris."
+        "description": "201 { id, email } | 400 validation ou JSON malformé | 409 e-mail déjà pris.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
       }
     },
     {
@@ -85,7 +85,7 @@
           "mode": "raw",
           "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
         },
-        "description": "200 { token } (stocké dans la variable `token`) | 400 validation | 401 identifiants incorrects."
+        "description": "200 { token } (stocké dans la variable `token`) | 400 validation | 401 identifiants incorrects.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
       }
     },
     {
@@ -114,7 +114,7 @@
             }
           ]
         },
-        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté. L'id de l'image créée est enregistré dans la variable `imageId`."
+        "description": "Choisir un fichier JPEG, PNG ou WebP dans le champ `image` (10 Mo et 8000 px par côté maximum). Le type est vérifié par le contenu, pas par l'extension. 201 métadonnées | 400 fichier manquant/illisible | 401 | 413 trop lourd ou trop grand | 415 format non supporté. L'id de l'image créée est enregistré dans la variable `imageId`.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
       },
       "event": [
         {
@@ -224,7 +224,7 @@
           "mode": "raw",
           "raw": "{\n  \"crop\": { \"x\": 0, \"y\": 0, \"width\": 200, \"height\": 200 },\n  \"rotate\": 90,\n  \"flip\": false,\n  \"mirror\": true,\n  \"resize\": { \"width\": 300, \"fit\": \"inside\" },\n  \"filter\": \"sepia\",\n  \"watermark\": { \"text\": \"© Mon Studio\", \"position\": \"bottom-right\", \"opacity\": 0.6 },\n  \"format\": \"webp\",\n  \"quality\": 80\n}"
         },
-        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → watermark → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. watermark = filigrane texte : text (1 à 30 caractères : lettres, chiffres, espace et . , ' : ; ! ? @ # & ( ) © _ -), position = center|top-left|top-right|bottom-left|bottom-right (défaut bottom-right), opacity 0,1 à 1 (défaut 0,5). format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 + en-tête `X-Cache: MISS` = dérivé créé ; 200 + `X-Cache: HIT` = la même transformation avait déjà été faite (cache Redis, 24 h) : le dérivé existant est renvoyé sans retraitement ni doublon. Corps : { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}."
+        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → watermark → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. watermark = filigrane texte : text (1 à 30 caractères : lettres, chiffres, espace et . , ' : ; ! ? @ # & ( ) © _ -), position = center|top-left|top-right|bottom-left|bottom-right (défaut bottom-right), opacity 0,1 à 1 (défaut 0,5). format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 + en-tête `X-Cache: MISS` = dérivé créé ; 200 + `X-Cache: HIT` = la même transformation avait déjà été faite (cache Redis, 24 h) : le dérivé existant est renvoyé sans retraitement ni doublon. Corps : { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}.\n\nRate limiting : `429` + `Retry-After` si la limite du palier est dépassée ; voir les en-têtes `RateLimit-Limit/Remaining/Reset` de la réponse."
       }
     }
   ]

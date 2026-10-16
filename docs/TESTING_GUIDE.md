@@ -222,25 +222,58 @@ Tests : `tests/unit/domain/transform-cache-key.test.ts`, `tests/unit/application
 
 **À essayer à la main** : `docker compose exec redis redis-cli`, puis `KEYS ips:*` et `TTL <clé>`.
 
-## 8. Rate limiting 🔜 (phase 3, branche suivante)
+## 8. Rate limiting ✅
 
-**Principe** : limiter le nombre de requêtes par fenêtre de temps ; au-delà → `429 Too Many Requests`.
-Plan : compteur Redis à **fenêtre fixe** (`INCR` + `PEXPIRE`, atomique via script Lua), derrière un port
-`IRateLimiter`, avec des paliers :
+(Concepts : [`docs/REDIS.md`](./REDIS.md), section 6.)
 
-| Palier | Clé de comptage | Limite prévue |
-|---|---|---|
-| authentification (`/register`, `/login`) | adresse IP | 10 / min |
-| upload | utilisateur | 20 / min |
-| transformation | utilisateur | 10 / min |
-| lecture (GET) | utilisateur | 300 / min |
+**Implémentation** : port `IRateLimiter` (domaine) → `RedisRateLimiter` (script Lua `INCR` + `PEXPIRE`, fenêtre fixe) →
+middleware `createRateLimitMiddleware` branché dans `app.ts`. Paliers par IP (auth) et par utilisateur (upload, transform, read).
+Le palier par utilisateur est placé **après** l'authentification (`chain(authenticate, limite)`).
 
-Variantes qui seront à tester : dépasser la limite (429 + `Retry-After` + `RateLimit-*`), attendre la
-réinitialisation de la fenêtre, deux utilisateurs indépendants, Redis arrêté (fail-open), limites configurables
-par variables d'environnement.
+| Palier | Routes | Compté par | Défaut (variable) |
+|---|---|---|---|
+| auth | `/register` + `/login` (compteur commun) | IP | 10/min (`RATE_LIMIT_AUTH`) |
+| upload | `POST /images` | utilisateur | 20/min (`RATE_LIMIT_UPLOAD`) |
+| transform | `POST /images/:id/transform` (les HIT comptent aussi) | utilisateur | 10/min (`RATE_LIMIT_TRANSFORM`) |
+| read | `GET /images`, `GET /images/:id` (compteur commun) | utilisateur | 300/min (`RATE_LIMIT_READ`) |
 
-*Pourquoi l'IP pour l'authentification ?* Avant la connexion on ne connaît pas l'utilisateur. Revers : derrière un
-proxy, toutes les requêtes semblent venir de la même IP (`trust proxy`, traité en phase 6).
+| Variante | Attendu |
+|---|---|
+| requêtes sous la limite | réponse normale + `RateLimit-Limit`, `RateLimit-Remaining` (décroît), `RateLimit-Reset` |
+| requête n° limite+1 | `429`, corps `{error:"TooManyRequests"}`, `Retry-After` (1 à 60 s) |
+| `/register` puis `/login` | partagent le même compteur (palier auth) |
+| un 429 | le use case n'est pas exécuté (aucun compte, aucun fichier créé) |
+| Alice bloquée, Bob | Bob passe (compteurs par utilisateur) |
+| requêtes sans jeton (401) | ne consomment aucun quota |
+| `GET /images` + `GET /images/:id` | même compteur « read » |
+| transform dépassé | upload et lecture non affectés (compteurs séparés) |
+| fenêtre écoulée | le compteur repart de zéro |
+| 20 requêtes simultanées, limite 7 | exactement 7 acceptées (atomicité) |
+| Redis arrêté | tout passe, sans en-têtes `RateLimit-*` (fail-open) |
+| navigateur | peut lire `Retry-After` et `RateLimit-*` (CORS `exposedHeaders`) |
+| clé Redis sans expiration | « réparée » par le script (sinon blocage à vie) |
+| limite connue | jusqu'à 2× la limite à cheval sur deux fenêtres (fenêtre fixe) |
+
+Tests : `tests/unit/infrastructure/rate-limit-middleware.test.ts` (middleware + `chain`),
+`tests/unit/infrastructure/in-memory-rate-limiter.test.ts` et `tests/integration/redis-rate-limiter.test.ts`
+(**même contrat** `tests/helpers/rate-limiter-contract.ts` pour le fake et pour Redis), `tests/e2e/rate-limit.test.ts`.
+
+**À tester à la main** (limites par défaut, API lancée) :
+
+```bash
+# 12 connexions de suite : les 10 premières répondent 401 (mauvais mot de passe), puis 429
+for i in $(seq 1 12); do
+  curl -s -o /dev/null -w "%{http_code}\n" -X POST localhost:3000/login \
+    -H 'Content-Type: application/json' -d '{"email":"a@b.co","password":"mauvais-mdp"}'
+done
+curl -i -X POST localhost:3000/login -H 'Content-Type: application/json' -d '{"email":"a@b.co","password":"x"}'
+#   → regarder Retry-After et RateLimit-Remaining: 0
+docker compose exec redis redis-cli KEYS 'ips:ratelimit:*'   # le compteur
+docker compose exec redis redis-cli TTL ips:ratelimit:auth:::1   # secondes avant remise à zéro (l'IP peut varier)
+docker compose stop redis   # puis refaire des requêtes : plus de 429 (fail-open) ; docker compose start redis
+```
+
+Astuce : pour tester un palier sans taper 10 requêtes, démarrer l'API avec `RATE_LIMIT_TRANSFORM=2 npm run dev -w apps/api`.
 
 ## 9. File d'attente (BullMQ) 🔜 (phase 4, pas commencée)
 
@@ -304,3 +337,5 @@ Deux idées pour **juger la qualité** d'un test :
 6. Lancer 10 transformations identiques en parallèle (Postman Runner, ou `xargs -P`) → un seul `201`.
 7. `docker compose stop redis`, relancer une transformation → fonctionne ; `GET /health` → `degraded`.
 8. Se connecter avec un second compte et demander l'image du premier → `404`.
+9. Avec `RATE_LIMIT_TRANSFORM=2`, faire 3 transformations → la 3e donne `429` + `Retry-After` ; attendre ce délai, ça repasse.
+10. Dans le navigateur (app Angular), ouvrir l'onglet Réseau : les en-têtes `RateLimit-*` sont visibles dans les réponses de l'API.

@@ -220,3 +220,22 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Fail-open et sémantique HTTP.** Si Redis tombe, le cache se comporte comme un cache vide (aucune méthode ne lève) et la transformation
    se fait quand même. Un HIT renvoie 200 (rien n'a été créé) et non 201, avec `X-Cache: HIT|MISS` ; cet en-tête doit être listé dans
    `Access-Control-Expose-Headers` sinon le navigateur le masque au JavaScript. Mesuré : MISS 145 ms, HIT 4,6 ms (×30).
+
+### Rate limiting (`feat/p3-rate-limiting`)
+
+1. **Fenêtre fixe avec un compteur atomique.** `INCR` crée et incrémente la clé ; la 1re requête pose l'expiration (`PEXPIRE`) qui
+   constitue la fenêtre. Les deux étapes sont dans UN script Lua : si le process s'arrêtait entre `INCR` et `PEXPIRE`, la clé n'expirerait
+   jamais et l'utilisateur serait bloqué à vie. Compromis connu : jusqu'à 2× la limite à cheval sur deux fenêtres (une fenêtre glissante
+   l'évite, au prix de plus de complexité).
+2. **À qui compte-t-on ?** Avant la connexion on ne connaît que l'IP (palier `auth`, par IP) ; après, on compte par utilisateur. Un
+   palier par type de coût (transformation = cher → 10/min ; lecture = bon marché → 300/min). Le palier par utilisateur doit passer
+   APRÈS l'authentification, sinon on ne sait pas qui compter, et un 401 ne consomme aucun quota.
+3. **Les bons codes et en-têtes.** `429` + `Retry-After` (secondes) disent au client QUAND réessayer ; `RateLimit-Limit/Remaining/Reset`
+   lui permettent de s'auto-limiter. Comme pour `X-Cache`, ils doivent figurer dans `exposedHeaders` de CORS sinon le navigateur les masque.
+4. **Fail-open pour une protection aussi.** Si Redis tombe, mieux vaut ne plus limiter que couper tout le service (le limiteur renvoie
+   `null` = « pas de décision »). Revers : pendant la panne, plus de protection (à surveiller en production).
+5. **Un test de contrat partagé.** Le même jeu de tests (`rate-limiter-contract.ts`) vérifie le fake en mémoire (horloge truquée) ET
+   Redis (vraie attente) : le fake ne ment pas sur le comportement. Test de mutation : retirer `PEXPIRE` seul ne casse rien (la garde
+   `ttl < 0` le compense : « mutant équivalent ») ; retirer les deux fait échouer 4 tests. Piège macOS : `sed -i` y exige une syntaxe
+   différente et une mutation « appliquée » peut en réalité ne rien changer, vérifier qu'elle a bien eu lieu.
+
