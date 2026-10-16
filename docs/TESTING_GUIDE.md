@@ -11,8 +11,8 @@ Table des matières : [0. Comment tester](#0-comment-tester) · [1. Inscription]
 [4. Upload](#4-upload-post-images) · [5. Lecture et liste](#5-lecture-et-liste) ·
 [6. Transformations](#6-transformations-post-imagesidtransform) · [7. Cache Redis](#7-cache-redis) ·
 [8. Rate limiting](#8-rate-limiting-) · [9. BullMQ](#9-file-dattente-bullmq-) · [10. Stockage](#10-stockage) ·
-[11. Santé, CORS, config](#11-santé-cors-configuration) · [12. Les trois niveaux de tests](#12-les-trois-niveaux-de-tests) ·
-[13. Tester soi-même](#13-tester-soi-même)
+[11. Santé, CORS, config](#11-santé-cors-configuration) · [12. Durcissement et sécurité](#12-durcissement-et-sécurité) · [13. Les trois niveaux de tests](#13-les-trois-niveaux-de-tests) ·
+[14. Tester soi-même](#14-tester-soi-même)
 
 ---
 
@@ -426,7 +426,62 @@ npm run worker -w apps/api          # le worker utilise le MÊME stockage
 
 Tests : `tests/e2e/health.test.ts`, `cors.test.ts`, `tests/unit/config.test.ts`, `tests/integration/migrator.test.ts`.
 
-## 12. Les trois niveaux de tests
+## 12. Durcissement et sécurité ✅ (phase 6)
+
+(Menaces, défenses et compromis : [`docs/SECURITY.md`](./SECURITY.md).)
+
+**Implémentation** : `helmet` + 404 JSON (`app.ts`), `TRUST_PROXY` (`app.set("trust proxy", n)`), limite de connexion par e-mail (`byEmail`, palier `loginEmail`),
+plafond de concurrence (`concurrency-limit-middleware.ts`), délais du serveur (`server-timeouts.ts`).
+
+| Variante | Attendu |
+|---|---|
+| `GET /health` | `X-Content-Type-Options: nosniff`, `X-Frame-Options`, `Strict-Transport-Security`, `Cross-Origin-Resource-Policy: same-site`, **pas** de `X-Powered-By` |
+| mêmes en-têtes sur un `401` ; CORS | toujours présents ; seule l'origine exacte autorisée reçoit `Access-Control-Allow-Origin` |
+| route inconnue | `404` JSON `{ error: "NotFound" }` (pas de HTML Express) |
+| `TRUST_PROXY=0`, 4 connexions avec des `X-Forwarded-For` différents (limite 3) | la 4e : `429` (l'en-tête est **ignoré**, on ne contourne pas la limite) |
+| `TRUST_PROXY=1` | chaque IP annoncée a son compteur ; la même IP partage le sien |
+| 4 connexions sur le **même e-mail** depuis 4 IP (limite 3) | la 4e : `429` + `Retry-After` ; un autre e-mail passe |
+| `ALICE@x.com`, `  alice@x.com ` | même compteur que `alice@x.com` |
+| bon mot de passe après la limite | refusé aussi (`429`) |
+| clés Redis du palier `loginEmail` | **aucune adresse en clair** (empreinte hexadécimale) |
+| corps sans e-mail exploitable | `400`, non compté |
+| 2 transformations simultanées, plafond 1 | la 2e : `503 ServerBusy` + `Retry-After: 1`, sans traitement lancé |
+| anonyme pendant la saturation | `401` (l'authentification passe avant le plafond) |
+| fin du traitement, ou client qui coupe la connexion | la place est rendue |
+| client qui envoie les **en-têtes** (ou le **corps**) goutte à goutte | connexion coupée en quelques secondes ; client normal servi |
+| journaux (inscription, connexion ratée, JSON malformé, doublon, jeton falsifié) | ni mot de passe, ni jeton, ni empreinte de mot de passe |
+| configuration | `TRUST_PROXY` entier 0-10 ; `MAX_CONCURRENT_TRANSFORMS` 1-64 ; limites e-mail positives |
+
+Tests : `tests/e2e/hardening.test.ts` (vrai Redis), `tests/unit/infrastructure/` (`concurrency-limit-middleware`, `by-email`), `tests/integration/server-timeouts.test.ts` (vrais sockets), `tests/unit/config.test.ts`.
+
+**À tester à la main** (API lancée) :
+
+```bash
+# 1. En-têtes de sécurité
+curl -si localhost:3000/health | grep -iE "x-content-type|x-powered|x-frame|strict-transport|cross-origin"
+curl -s localhost:3000/nimporte                                    # {"error":"NotFound",...}
+
+# 2. On ne peut pas falsifier son IP (TRUST_PROXY=0 par défaut) : changer X-Forwarded-For ne contourne pas la limite
+for i in $(seq 1 12); do curl -s -o /dev/null -w "%{http_code} " -X POST localhost:3000/login \
+  -H 'Content-Type: application/json' -H "X-Forwarded-For: 9.9.9.$i" -d '{"email":"a@b.co","password":"x"}'; done; echo   # 401 ... puis 429
+#    Relancer l'API avec TRUST_PROXY=1 : chaque X-Forwarded-For compte comme un client distinct (la limite par IP ne bloque plus).
+
+# 3. Limite par e-mail depuis plusieurs « IP » (API lancée avec TRUST_PROXY=1 RATE_LIMIT_LOGIN_EMAIL=3)
+for i in 1 2 3 4; do curl -s -o /dev/null -w "%{http_code} " -X POST localhost:3000/login \
+  -H 'Content-Type: application/json' -H "X-Forwarded-For: 9.9.9.$i" -d '{"email":"Cible@Example.com","password":"x"}'; done; echo   # 401 401 401 429
+docker compose exec redis redis-cli --scan --pattern 'ips:ratelimit:loginEmail:*'   # une empreinte, pas l'e-mail
+
+# 4. Saturation : API lancée avec MAX_CONCURRENT_TRANSFORMS=1, 6 transformations simultanées (paramètres différents, grande image)
+for r in 10 20 30 40 50 60; do curl -s -o /dev/null -w "%{http_code} " -X POST localhost:3000/images/$IMG/transform \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "{\"rotate\":$r}" & done; wait; echo   # un 201 et des 503
+
+# 5. Dépendances
+npm audit                                                          # 0 vulnerabilities
+```
+
+Penser à supprimer les clés `ips:ratelimit:*` entre deux essais (`redis-cli --scan --pattern 'ips:ratelimit:*'`, puis `DEL`) : la fenêtre de 15 minutes de la limite par e-mail est longue.
+
+## 13. Les trois niveaux de tests
 
 | Niveau | Question posée | Outils | Exemple |
 |---|---|---|---|
@@ -439,7 +494,7 @@ Deux idées pour **juger la qualité** d'un test :
   *échoue*. Un test qui passe quand le code est cassé ne prouve rien (cela m'est arrivé pour la concurrence).
 - **Fakes qui ressemblent au réel** : `InMemoryTransformCache` implémente vraiment un verrou et une attente.
 
-## 13. Tester soi-même : parcours suggéré
+## 14. Tester soi-même : parcours suggéré
 
 1. `POST /register` deux fois avec le même e-mail → `409`.
 2. `POST /login`, copier le jeton, le modifier d'un caractère → `401`.
@@ -451,3 +506,4 @@ Deux idées pour **juger la qualité** d'un test :
 8. Se connecter avec un second compte et demander l'image du premier → `404`.
 9. Avec `RATE_LIMIT_TRANSFORM=2`, faire 3 transformations → la 3e donne `429` + `Retry-After` ; attendre ce délai, ça repasse.
 10. Dans le navigateur (app Angular), ouvrir l'onglet Réseau : les en-têtes `RateLimit-*` sont visibles dans les réponses de l'API.
+11. Phase 6 : relancer l'API avec `TRUST_PROXY=1` et vérifier que `X-Forwarded-For` change alors le compteur (section 12), puis `MAX_CONCURRENT_TRANSFORMS=1` et saturer avec des requêtes parallèles.

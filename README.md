@@ -169,6 +169,13 @@ aucun quota. Fail-open : si Redis est arrêté, aucune limite n'est appliquée. 
 enchaîner jusqu'à 2× la limite à cheval sur deux fenêtres. Derrière un reverse proxy, `req.ip` serait l'IP du proxy
 (`trust proxy` à configurer : phase 6).
 
+## Sécurité (phase 6)
+
+Voir `docs/SECURITY.md` (menaces, défenses, compromis). En plus de ce qui précède : en-têtes de sécurité (`helmet`), 404 en JSON, **limite de connexion par e-mail**
+(`RATE_LIMIT_LOGIN_EMAIL` par `RATE_LIMIT_LOGIN_EMAIL_WINDOW_SECONDS`, clé = empreinte de l'e-mail, jamais l'adresse en clair), **`TRUST_PROXY`** (nombre exact de reverse proxies
+de confiance, `0` par défaut : `X-Forwarded-For` est alors ignoré), **plafond de transformations synchrones simultanées** (`MAX_CONCURRENT_TRANSFORMS`, défaut 2 ; au-delà `503` +
+`Retry-After`) et délais du serveur contre les clients lents. Le HTTPS est terminé par le reverse proxy (hors application).
+
 ## Redis
 
 Redis (cache, rate limiting et file BullMQ ; guides : `docs/REDIS.md`, `docs/BULLMQ.md`) tourne dans Docker sur le port 6380, **sans persistance** : ce sont des

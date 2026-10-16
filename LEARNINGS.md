@@ -300,3 +300,18 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Capacité optionnelle d'un port.** Le disque ne sait pas signer : le signeur est `null` et la route répond `501 Not Implemented`, au lieu de faire semblant. Les tests
    (mutation) ont confirmé que l'ordre « autorisation puis capacité » est bien vérifié.
 
+## Phase 6
+
+### Durcissement sécurité (`feat/p6-security-hardening`)
+
+1. **Raisonner menace → défense → preuve.** Une carte (`docs/SECURITY.md`) relie chaque attaque (brute-force, falsification d'IP, slowloris, épuisement de RAM...) à sa défense, au code et au test.
+2. **Ne jamais croire `X-Forwarded-For`.** Un client peut l'écrire lui-même : on ne le lit qu'à travers un nombre DÉCLARÉ de proxies (`TRUST_PROXY`). Trop bas, tout le monde partage l'IP du proxy ;
+   trop haut, on contourne le rate limiting. Défaut prudent (0) et test du contournement.
+3. **Limiter aussi par cible.** La limite par IP n'arrête pas un botnet qui vise UN compte : limite par e-mail (empreinte SHA-256, normalisée, jamais l'adresse en clair dans Redis). Compromis assumé : on peut
+   bloquer exprès un compte (déni de service ciblé).
+4. **Borner le temps et la mémoire.** Délais serveur (en-têtes, requête, keep-alive) contre le slowloris ; plafond de concurrence (503 immédiat plutôt qu'une file qui garde la RAM occupée), relâché sur `close`
+   même si le client coupe. Le rate limiting borne le NOMBRE par minute, pas le nombre EN MÊME TEMPS.
+5. **Des tests qui prouvent vraiment.** Mon premier test de saturation dépendait du temps de calcul de sharp et la mutation « plafond avant authentification » survivait ; remplacé par un faux processeur « à porte »
+   (déterministe). Le test des délais ne distinguait pas `headersTimeout` de `requestTimeout` : réglé pour qu'un seul agisse à la fois. Autre piège : un `keys()` ioredis avec `keyPrefix` ne renvoyait rien, donc un
+   test « zéro clé » passait à vide ; un témoin positif l'a démasqué.
+
