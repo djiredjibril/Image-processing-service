@@ -19,6 +19,7 @@ import { BullMqTransformJobQueue } from "../../src/infrastructure/queue/bullmq-t
 import { startTransformWorker } from "../../src/infrastructure/queue/transform-worker.js";
 import type { S3FileStorage } from "../../src/infrastructure/storage/s3-file-storage.js";
 import { InMemoryTransformCache } from "../fakes/in-memory-transform-cache.js";
+import { S3FileUrlSigner } from "../../src/infrastructure/storage/s3-file-url-signer.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
 import { makeQuadrants } from "../helpers/images.js";
 import { createMigratedTestPool, resetTables } from "../helpers/test-db.js";
@@ -162,5 +163,93 @@ describe("transformation asynchrone avec un worker et un stockage S3 partagé", 
     const file = await request(asyncApp).get(`/images/${derivedId ?? ""}`).set(authed(token));
     expect(file.status).toBe(200);
     expect(file.headers["content-type"]).toBe("image/webp");
+  });
+});
+
+describe("URLs présignées (GET /images/:id/url) avec un vrai SeaweedFS", () => {
+  let signedApp: Express;
+  let imageId: string;
+  let png: Buffer;
+
+  async function signedUrl(forToken = token, id = imageId): Promise<string> {
+    const res = await request(signedApp).get(`/images/${id}/url`).set(authed(forToken));
+    return (res.body as { url: string }).url;
+  }
+
+  beforeEach(async () => {
+    signedApp = buildTestApp(pool, { storage: s3, urlSigner: new S3FileUrlSigner(client, bucket), presignedUrlTtlSeconds: 60 });
+    png = await makeQuadrants(40, 20);
+    const up = await request(signedApp).post("/images").set(authed(token)).attach("image", png, "p.png");
+    imageId = (up.body as { id: string }).id;
+  });
+
+  it("200 + URL signée : le fichier se télécharge DIRECTEMENT depuis le stockage, sans jeton, avec les mêmes octets et le bon type", async () => {
+    const res = await request(signedApp).get(`/images/${imageId}/url`).set(authed(token));
+    expect(res.status).toBe(200);
+    expect(res.headers["cache-control"]).toBe("no-store");
+    const body = res.body as { url: string; expiresInSeconds: number; expiresAt: string };
+    expect(body.expiresInSeconds).toBe(60);
+    expect(new Date(body.expiresAt).getTime()).toBeGreaterThan(Date.now());
+    expect(new URL(body.url).searchParams.get("X-Amz-Expires")).toBe("60");
+
+    const direct = await fetch(body.url); // aucun en-tête Authorization : la signature de l'URL suffit
+    expect(direct.status).toBe(200);
+    expect(direct.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await direct.arrayBuffer()).equals(png)).toBe(true);
+  });
+
+  it("l'URL est refusée (403) si la signature est altérée, ou si on la détourne vers un autre objet du bucket", async () => {
+    const other = await request(signedApp).post("/images").set(authed(token)).attach("image", await makeQuadrants(20, 20), "q.png");
+    const otherId = (other.body as { id: string }).id;
+    const url = new URL(await signedUrl());
+    const otherKey = (await pool.query<{ storage_key: string }>("SELECT storage_key FROM images WHERE id = $1", [otherId])).rows[0]?.storage_key ?? "";
+
+    const tampered = new URL(url);
+    const signature = tampered.searchParams.get("X-Amz-Signature") ?? "";
+    tampered.searchParams.set("X-Amz-Signature", (signature.startsWith("0") ? "1" : "0") + signature.slice(1));
+    expect((await fetch(tampered)).status).toBe(403);
+
+    const redirected = new URL(url);
+    redirected.pathname = `/${bucket}/${otherKey}`;
+    expect((await fetch(redirected)).status).toBe(403);
+
+    const stretched = new URL(url);
+    stretched.searchParams.set("X-Amz-Expires", "604800"); // prolonger la durée invalide la signature
+    expect((await fetch(stretched)).status).toBe(403);
+  });
+
+  it("l'URL EXPIRE : valable avant l'échéance, refusée (403) après", async () => {
+    const shortLived = buildTestApp(pool, { storage: s3, urlSigner: new S3FileUrlSigner(client, bucket), presignedUrlTtlSeconds: 2 });
+    const url = (await request(shortLived).get(`/images/${imageId}/url`).set(authed(token))).body as { url: string };
+    expect((await fetch(url.url)).status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 3200));
+    expect((await fetch(url.url)).status).toBe(403);
+  });
+
+  it("autorisation : un autre utilisateur, un id inconnu ou mal formé, ou l'absence de jeton ne délivrent aucune URL", async () => {
+    const other = await request(signedApp).get(`/images/${imageId}/url`).set(authed(otherToken));
+    const unknown = await request(signedApp).get("/images/00000000-0000-4000-8000-000000000000/url").set(authed(token));
+    const malformed = await request(signedApp).get("/images/nimporte/url").set(authed(token));
+    for (const res of [other, unknown, malformed]) {
+      expect(res.status).toBe(404);
+      expect(res.body).toEqual({ error: "ImageNotFound", message: "Image introuvable" });
+    }
+    expect((await request(signedApp).get(`/images/${imageId}/url`)).status).toBe(401);
+  });
+
+  it("l'URL d'un dérivé fonctionne aussi", async () => {
+    const created = await request(signedApp).post(`/images/${imageId}/transform`).set(authed(token)).send({ rotate: 90, format: "webp" });
+    const derivedId = (created.body as { id: string }).id;
+    const res = await fetch(await signedUrl(token, derivedId));
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("image/webp");
+  });
+
+  it("stockage sans URLs signées (disque local) : 501 PresignedUrlsUnsupported, et l'autorisation passe d'abord (404 pour autrui)", async () => {
+    const localApp = buildTestApp(pool, {});
+    const own = await request(localApp).get(`/images/${imageId}/url`).set(authed(token));
+    expect(own.status).toBe(501);
+    expect(own.body).toMatchObject({ error: "PresignedUrlsUnsupported" });
+    expect((await request(localApp).get(`/images/${imageId}/url`).set(authed(otherToken))).status).toBe(404);
   });
 });
