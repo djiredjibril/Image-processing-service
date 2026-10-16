@@ -113,6 +113,8 @@ POST /register
 POST /login
 POST /images                  upload d'une image
 POST /images/:id/transform    applique des transformations, crée un dérivé
+POST /images/:id/jobs         idem en asynchrone (202 + worker BullMQ), phase 4
+GET  /jobs/:id                statut d'un job (polling), phase 4
 GET  /images/:id              renvoie le fichier
 GET  /images?page=&limit=     liste paginée des images de l'utilisateur
 ```
@@ -127,7 +129,7 @@ Codes HTTP corrects (201 création, 400 validation, 401 non authentifié, 404 in
 | 1 | Auth JWT, upload, `LocalFileStorage`, métadonnées Postgres, GET + liste paginée | Terminée |
 | 2 | Transformations avec sharp, dérivés stockés | Terminée |
 | 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | Terminée |
-| 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | En cours |
+| 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | Terminée |
 | 5 | `S3FileStorage`, stockage objet auto-hébergé, URLs présignées | À faire |
 | 6 | Durcissement sécurité, tests de charge (k6/autocannon) | À faire |
 

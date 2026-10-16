@@ -259,3 +259,15 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
    restait suspendue ; un test d'intégration l'a révélé (timeout), corrigé en vérifiant la connexion (~1 s) et en bornant l'appel.
    BullMQ impose aussi ses propres connexions (`maxRetriesPerRequest: null`, pas de `commandTimeout`, pas de `keyPrefix`).
 
+### API asynchrone : 202 + polling (`feat/p4-async-transform-api`)
+
+1. **`202 Accepted` + `Location` + polling.** `202` = « demande acceptée, pas encore faite » (à ne pas confondre avec `201` « créé »). `Location`
+   dit où suivre la ressource, `GET /jobs/:id` est rappelé par le client jusqu'à un statut final. Le polling est répétitif : il compte dans un quota « lecture » large.
+2. **Valider tôt (fail fast), revalider tard.** Les paramètres invalides reçoivent un `400` immédiat plutôt qu'un job qui échouera, mais le worker
+   revérifie tout : entre la demande et le traitement, l'image peut avoir été supprimée.
+3. **Ordre et compensation.** Écrire en base PUIS mettre en file (un worker ne reçoit jamais un identifiant inconnu) ; si la file échoue, supprimer le job
+   (pas d'orphelin `queued`). Même motif que la compensation de l'upload : deux systèmes (PostgreSQL, Redis) ne partagent pas de transaction.
+4. **Pas de contournement des quotas.** Créer un job consomme le même quota que la transformation synchrone ; sinon l'endpoint asynchrone serait une porte dérobée.
+5. **Ce que la vérification manuelle a trouvé et que les tests n'avaient pas vu** : le point d'entrée du worker ne chargeait pas le `.env` (les tests n'exécutent
+   pas `worker.ts`), et un double `SIGTERM` (relayé par `tsx`) fermait deux fois le pool PostgreSQL et plantait l'arrêt. Lancer vraiment le programme reste indispensable.
+

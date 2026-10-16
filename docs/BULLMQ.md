@@ -69,6 +69,21 @@ apps/api/
 Clean Architecture : le domaine et les use cases ne connaissent ni BullMQ ni Redis, seulement les ports
 `ITransformJobQueue` et `ITransformJobRepository`. En test unitaire, la file est un faux en mémoire.
 
+### Les endpoints
+
+| Requête | Réponse | Rôle |
+|---|---|---|
+| `POST /images/:id/jobs` (mêmes paramètres que `/transform`) | `202 Accepted`, `Location: /jobs/<id>`, `Retry-After: 1`, corps = le job `queued` | dépose la demande |
+| `GET /jobs/:id` | `200` + `{ id, status, attempts, image, error, ... }` | « polling » : on le rappelle jusqu'à un statut final |
+| (erreurs) | `400` paramètres invalides · `401` · `404` image/job inconnu ou d'un autre utilisateur · `429` limite · `503` file injoignable | |
+
+Statuts : `queued` (en file) → `processing` (un worker l'a pris) → `completed` (champ `image` = le dérivé) ou `failed` (champ `error`).
+`202` veut dire « demande **acceptée**, pas encore faite » (contrairement à `201` : « créé »). `Location` donne l'adresse où suivre le job.
+Créer un job consomme le **même quota** que `/transform` (`transform`) pour qu'on ne contourne pas la limite en passant par l'asynchrone ;
+le suivi compte dans le quota de lecture (`read`, 300/min), large car le polling est répétitif.
+
+Fichiers HTTP : `routes/transform-job-routes.ts`, use cases `enqueue-transform-job.ts` et `get-job.ts`.
+
 ## 4. Les décisions de conception (et pourquoi)
 
 ### 4.1 PostgreSQL est la source de vérité du statut, BullMQ n'est que le transport
@@ -91,6 +106,10 @@ enregistré en base.
 
 Piège à retenir : *« completed » côté BullMQ ne veut pas dire « réussi » côté métier.* Le statut qui compte est celui
 de la base.
+
+### 4.3 bis Validation « fail fast » à l'entrée
+`POST /images/:id/jobs` vérifie tout de suite l'autorisation et les paramètres : un `rotate: 45.5` reçoit un `400` immédiat
+plutôt qu'un job qui échouera plus tard. Le worker revalide quand même (l'image peut avoir changé entre la demande et le traitement).
 
 ### 4.4 La file est vitale : fail-closed (contraste avec Redis cache)
 Pour le cache et le rate limiting, on a choisi **fail-open** : sans Redis, on continue sans cache. Ici c'est
@@ -115,6 +134,10 @@ Un traitement sharp peut prendre ~1 Go (image de 49 Mpx) : `WORKER_CONCURRENCY` 
 lance **plusieurs process worker**, pas plus de threads dans un seul. À l'arrêt (`SIGINT`/`SIGTERM`), `worker.close()`
 **attend la fin des jobs en cours** avant de quitter : on ne coupe pas une transformation à moitié.
 
+### 4.8 Ordre : base d'abord, file ensuite
+`EnqueueTransformJob` écrit le job en base **puis** le met en file : un worker ne peut jamais recevoir un identifiant que la base
+ne connaît pas. Si la mise en file échoue, le job est **supprimé** (pas de job `queued` orphelin que rien ne traitera).
+
 ## 5. Lancer et explorer
 
 ```bash
@@ -122,6 +145,14 @@ docker compose up -d                  # PostgreSQL + Redis
 npm run migrate                       # crée la table transform_jobs
 npm run dev -w apps/api               # l'API
 npm run worker -w apps/api            # le worker, dans un AUTRE terminal (Ctrl+C = arrêt propre)
+```
+
+Essai complet (remplacer le jeton et l'identifiant d'image) :
+
+```bash
+curl -i -X POST localhost:3000/images/$IMG/jobs -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+     -d '{"rotate":45,"filter":"sepia","format":"webp"}'      # 202 + Location: /jobs/<id>
+curl -s localhost:3000/jobs/<id> -H "Authorization: Bearer $TOKEN"   # queued → completed (relancer)
 ```
 
 Variables : `QUEUE_ATTEMPTS`, `QUEUE_BACKOFF_MS`, `WORKER_CONCURRENCY` (voir `.env.example`).
