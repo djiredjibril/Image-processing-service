@@ -52,7 +52,9 @@ export function createGetImageRouter(getImage: GetImage, authenticate: RequestHa
       "X-Content-Type-Options": "nosniff",
     });
     pipeline(result.value.stream, res, (error) => {
-      if (error) {
+      // Un client qui ferme la connexion en cours de téléchargement (onglet fermé, annulation) est NORMAL, pas une erreur
+      // du serveur : on ne pollue pas les journaux. `pipeline` détruit déjà le flux source (aucune fuite de connexion).
+      if (error && error.code !== "ERR_STREAM_PREMATURE_CLOSE") {
         // Les en-têtes sont déjà partis : on ne peut plus changer le statut, seulement couper.
         console.error("Erreur pendant l'envoi du fichier", error);
       }

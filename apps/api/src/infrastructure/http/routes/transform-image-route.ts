@@ -18,7 +18,7 @@ const idSchema = z.uuid();
  *
  * @param transformImage - Use case injecté.
  * @param authenticate - Middleware d'authentification.
- * @returns Un routeur exposant `POST /images/:id/transform` (201 créé ou 200 déjà en cache, 400, 401, 404).
+ * @returns Un routeur exposant `POST /images/:id/transform` (201 créé ou 200 déjà en cache, 400, 401, 404, 429, 503 si le serveur est saturé).
  */
 export function createTransformImageRouter(transformImage: TransformImage, authenticate: RequestHandler): Router {
   const router = Router();
@@ -47,8 +47,8 @@ export function createTransformImageRouter(transformImage: TransformImage, authe
 
     const result = await transformImage.execute({ ownerId: req.auth.userId, imageId: id.data, transformations: body.data });
     if (isErr(result)) {
-      const { status, body: errorBody } = transformErrorToHttp(result.error);
-      res.status(status).json(errorBody);
+      const { status, headers, body: errorBody } = transformErrorToHttp(result.error);
+      res.set(headers ?? {}).status(status).json(errorBody);
       return;
     }
     // Cache hit : rien n'a été créé, donc 200 et non 201. `X-Cache` indique si le dérivé existait déjà.

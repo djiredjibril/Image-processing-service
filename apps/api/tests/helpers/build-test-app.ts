@@ -5,6 +5,7 @@ import type pg from "pg";
 import { EnqueueTransformJob } from "../../src/application/use-cases/enqueue-transform-job.js";
 import { GetJob } from "../../src/application/use-cases/get-job.js";
 import type { ITransformJobQueue } from "../../src/domain/ports/transform-job-queue.js";
+import { LocalWorkSlots } from "../../src/infrastructure/concurrency/local-work-slots.js";
 import { PgTransformJobRepository } from "../../src/infrastructure/persistence/pg-transform-job-repository.js";
 import { FakeTransformJobQueue } from "../fakes/fake-transform-job-queue.js";
 import { GetImage } from "../../src/application/use-cases/get-image.js";
@@ -89,7 +90,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     uploadImage,
     getImage: new GetImage(images, storage),
     listImages: new ListImages(images),
-    transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }),
+    transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }, new LocalWorkSlots(options.maxConcurrentTransforms ?? 1000)),
     enqueueTransformJob: new EnqueueTransformJob(images, transformJobs, options.jobQueue ?? new FakeTransformJobQueue(), { maxPixelsSide }),
     getJob: new GetJob(transformJobs, images),
     getImageUrl: new GetImageUrl(images, storage, options.urlSigner ?? null, options.presignedUrlTtlSeconds ?? 300),
@@ -99,6 +100,5 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     maxUploadBytes,
     corsOrigin: options.corsOrigin ?? "http://localhost:4200",
     trustProxyHops: options.trustProxyHops ?? 0,
-    maxConcurrentTransforms: options.maxConcurrentTransforms ?? 1000,
   });
 }

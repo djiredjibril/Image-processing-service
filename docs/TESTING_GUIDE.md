@@ -431,7 +431,7 @@ Tests : `tests/e2e/health.test.ts`, `cors.test.ts`, `tests/unit/config.test.ts`,
 (Menaces, défenses et compromis : [`docs/SECURITY.md`](./SECURITY.md).)
 
 **Implémentation** : `helmet` + 404 JSON (`app.ts`), `TRUST_PROXY` (`app.set("trust proxy", n)`), limite de connexion par e-mail (`byEmail`, palier `loginEmail`),
-plafond de concurrence (`concurrency-limit-middleware.ts`), délais du serveur (`server-timeouts.ts`).
+plafond de concurrence (port `IWorkSlots`, `LocalWorkSlots`, pris dans `TransformImage` autour du seul calcul coûteux), délais du serveur (`server-timeouts.ts`).
 
 | Variante | Attendu |
 |---|---|
@@ -445,14 +445,17 @@ plafond de concurrence (`concurrency-limit-middleware.ts`), délais du serveur (
 | bon mot de passe après la limite | refusé aussi (`429`) |
 | clés Redis du palier `loginEmail` | **aucune adresse en clair** (empreinte hexadécimale) |
 | corps sans e-mail exploitable | `400`, non compté |
-| 2 transformations simultanées, plafond 1 | la 2e : `503 ServerBusy` + `Retry-After: 1`, sans traitement lancé |
+| 2 transformations simultanées **à calculer**, plafond 1 | la 2e : `503 ServerBusy` + `Retry-After: 1`, sans traitement lancé |
+| même transformation **déjà en cache**, plafond saturé | `200` `X-Cache: HIT` (le cache ne consomme pas de place) |
+| succès, échec métier, panne technique | la place est toujours rendue ; le refus libère aussi le verrou du cache |
+| client qui coupe un téléchargement d'image | aucune « erreur » journalisée, serveur sain |
 | anonyme pendant la saturation | `401` (l'authentification passe avant le plafond) |
 | fin du traitement, ou client qui coupe la connexion | la place est rendue |
 | client qui envoie les **en-têtes** (ou le **corps**) goutte à goutte | connexion coupée en quelques secondes ; client normal servi |
 | journaux (inscription, connexion ratée, JSON malformé, doublon, jeton falsifié) | ni mot de passe, ni jeton, ni empreinte de mot de passe |
 | configuration | `TRUST_PROXY` entier 0-10 ; `MAX_CONCURRENT_TRANSFORMS` 1-64 ; limites e-mail positives |
 
-Tests : `tests/e2e/hardening.test.ts` (vrai Redis), `tests/unit/infrastructure/` (`concurrency-limit-middleware`, `by-email`), `tests/integration/server-timeouts.test.ts` (vrais sockets), `tests/unit/config.test.ts`.
+Tests : `tests/e2e/hardening.test.ts` (vrai Redis), `tests/unit/infrastructure/` (`local-work-slots`, `by-email`), `tests/unit/application/transform-image.test.ts` (plafond), `tests/integration/server-timeouts.test.ts` (vrais sockets), `tests/unit/config.test.ts`.
 
 **À tester à la main** (API lancée) :
 
@@ -477,6 +480,11 @@ for r in 10 20 30 40 50 60; do curl -s -o /dev/null -w "%{http_code} " -X POST l
 
 # 5. Dépendances
 npm audit                                                          # 0 vulnerabilities
+
+# 6. Test de charge (≈ 1 min 30, base et Redis de TEST, rien de votre base de dev n'est touché) — voir docs/LOAD_TESTING.md
+npm run loadtest                                                   # tableau req/s + latences ; code de sortie 0 si aucune erreur inattendue
+#    Pendant ce temps, regarder la mémoire du process (Activity Monitor / `top`) : elle doit rester stable.
+#    Essayer : LOADTEST_CONNECTIONS=100 npm run loadtest -w apps/api  → plus de 503 sur le scénario saturé, les autres restent à 0 erreur.
 ```
 
 Penser à supprimer les clés `ips:ratelimit:*` entre deux essais (`redis-cli --scan --pattern 'ips:ratelimit:*'`, puis `DEL`) : la fenêtre de 15 minutes de la limite par e-mail est longue.

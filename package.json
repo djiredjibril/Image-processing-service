@@ -16,6 +16,7 @@
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "dev:web": "npm run start -w apps/web"
+    "dev:web": "npm run start -w apps/web",
+    "loadtest": "npm run loadtest -w apps/api"
   }
 }

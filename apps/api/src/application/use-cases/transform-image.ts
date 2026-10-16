@@ -8,9 +8,11 @@ import {
   type CorruptedImageError,
   ImageNotFoundError,
   InvalidTransformationError,
+  ServerBusyError,
 } from "../../domain/errors/image-errors.js";
 import type { IFileStorage } from "../../domain/ports/file-storage.js";
 import type { IImageProcessor } from "../../domain/ports/image-processor.js";
+import { type IWorkSlots, UNLIMITED_WORK_SLOTS } from "../../domain/ports/work-slots.js";
 import type { ITransformCache } from "../../domain/ports/transform-cache.js";
 import type { IImageRepository } from "../../domain/repositories/image-repository.js";
 import { FileSize } from "../../domain/value-objects/file-size.js";
@@ -49,7 +51,7 @@ export interface TransformImageOutput {
 }
 
 /** Erreurs métier possibles de `TransformImage`. */
-export type TransformImageError = ImageNotFoundError | InvalidTransformationError | CorruptedImageError;
+export type TransformImageError = ImageNotFoundError | InvalidTransformationError | CorruptedImageError | ServerBusyError;
 
 /**
  * Transforme une image et enregistre le résultat comme NOUVELLE image.
@@ -68,6 +70,7 @@ export class TransformImage {
     private readonly processor: IImageProcessor,
     private readonly cache: ITransformCache,
     private readonly limits: TransformLimits,
+    private readonly slots: IWorkSlots = UNLIMITED_WORK_SLOTS,
   ) {}
 
   /**
@@ -80,7 +83,8 @@ export class TransformImage {
    * @param input - Appelant, image source et transformations demandées.
    * @returns `Ok({ image, cached })`, ou `Err` parmi : `ImageNotFoundError` (inconnue, d'un autre
    * utilisateur, ou fichier absent), `InvalidTransformationError` (paramètres invalides, crop hors image,
-   * résultat trop grand), `CorruptedImageError` (source illisible).
+   * résultat trop grand), `CorruptedImageError` (source illisible), `ServerBusyError` (plafond de traitements simultanés atteint,
+   * et la réponse n'était pas dans le cache).
    * @throws Si le stockage ou la base tombent en panne (erreur inattendue).
    */
   async execute(input: TransformImageInput): Promise<Result<TransformImageOutput, TransformImageError>> {
@@ -117,7 +121,17 @@ export class TransformImage {
         return ok({ image: afterWait, cached: true });
       }
 
-      const created = await this.createDerived(input, source, set.value, outputFormat, rootId);
+      // Le plafond ne s'applique qu'ici, au travail COÛTEUX : une réponse servie par le cache ne le consomme jamais.
+      const slot = this.slots.tryAcquire();
+      if (slot === null) {
+        return err(new ServerBusyError());
+      }
+      let created: Result<ImageSummary, TransformImageError>;
+      try {
+        created = await this.createDerived(input, source, set.value, outputFormat, rootId);
+      } finally {
+        slot.release();
+      }
       if (isErr(created)) {
         return err(created.error);
       }

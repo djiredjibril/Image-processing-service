@@ -10,6 +10,7 @@ import type { Redis } from "ioredis";
 import { Redis as RawRedis } from "ioredis";
 import type pg from "pg";
 import request from "supertest";
+import sharp from "sharp";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { RedisRateLimiter } from "../../src/infrastructure/cache/redis-rate-limiter.js";
 import { buildTestApp } from "../helpers/build-test-app.js";
@@ -187,6 +188,33 @@ describe("plafond de transformations simultanées", () => {
     processor.transformGate = null;
     expect((await post({ rotate: 40 })).status).toBe(201); // la place a été rendue
   });
+
+  it("une réponse DÉJÀ en cache est servie (200 HIT) même quand le plafond est saturé : seul le travail coûteux est refusé", async () => {
+    const processor = new FakeImageProcessor();
+    const app = buildTestApp(pool, { storageDir, processor, maxConcurrentTransforms: 1 });
+    await request(app).post("/register").send(credentials("alice@example.com"));
+    const token = ((await request(app).post("/login").send(credentials("alice@example.com"))).body as { token: string }).token;
+    const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from("contenu")]);
+    const id = ((await request(app).post("/images").set("Authorization", `Bearer ${token}`).attach("image", jpeg, "p.jpg")).body as { id: string }).id;
+    const post = (rotate: number): request.Test => request(app).post(`/images/${id}/transform`).set("Authorization", `Bearer ${token}`).send({ rotate });
+
+    expect((await post(90)).status).toBe(201); // mis en cache
+    let openGate: () => void = () => undefined;
+    processor.transformGate = new Promise<void>((resolve) => {
+      openGate = resolve;
+    });
+    const started = processor.nextTransformStarted();
+    const busy = post(180).then((res) => res);
+    await started; // plafond saturé
+
+    const hit = await post(90);
+    expect(hit.status).toBe(200);
+    expect(hit.headers["x-cache"]).toBe("HIT");
+    expect((await post(270)).status).toBe(503); // un NOUVEAU calcul, lui, est refusé
+
+    openGate();
+    expect((await busy).status).toBe(201);
+  });
 });
 
 describe("hygiène des journaux", () => {
@@ -220,5 +248,37 @@ describe("hygiène des journaux", () => {
     expect(everything).not.toContain(token);
     expect(everything).not.toContain(hash);
     expect(hash).toContain("$argon2id$"); // la vérification a un sens : l'empreinte existe bien
+  });
+});
+
+describe("client qui coupe pendant un téléchargement", () => {
+  it("n'est pas journalisé comme une erreur serveur, et le serveur reste sain", async () => {
+    const errors: string[] = [];
+    const spy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+      errors.push(args.map(String).join(" "));
+    });
+    const server = free.listen(0);
+    try {
+      await request(free).post("/register").send(credentials("alice@example.com"));
+      const token = ((await request(free).post("/login").send(credentials("alice@example.com"))).body as { token: string }).token;
+      const big = await sharp({ create: { width: 1500, height: 1500, channels: 3, background: { r: 9, g: 9, b: 9 }, noise: { type: "gaussian", mean: 128, sigma: 60 } } }).png().toBuffer();
+      const up = await request(free).post("/images").set("Authorization", `Bearer ${token}`).attach("image", big, "grosse.png");
+      expect(up.status).toBe(201); // l'image de test doit être valide (≈ 6 Mo, sous la limite de 10 Mo)
+      const id = (up.body as { id: string }).id;
+
+      const { port } = server.address() as { port: number };
+      for (let i = 0; i < 3; i++) {
+        const res = await fetch(`http://127.0.0.1:${String(port)}/images/${id}`, { headers: { Authorization: `Bearer ${token}` } });
+        const reader = res.body?.getReader();
+        await reader?.read(); // un premier morceau reçu...
+        await reader?.cancel(); // ...puis le client coupe
+      }
+      await new Promise((resolve) => setTimeout(resolve, 300));
+      expect(errors.filter((line) => line.includes("Erreur pendant l'envoi"))).toEqual([]);
+      expect((await request(free).get("/health")).status).toBe(200);
+    } finally {
+      spy.mockRestore();
+      server.close();
+    }
   });
 });

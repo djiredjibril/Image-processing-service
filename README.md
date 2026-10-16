@@ -66,6 +66,7 @@ puis affichées via une URL objet : une balise `<img src>` ne peut pas envoyer d
 npm test                  # unit + integration + E2E de tous les workspaces
 npm run typecheck && npm run lint   # lint : API uniquement
 npm test -w apps/web                 # tests de l'application Angular (Vitest, jsdom)
+npm run loadtest                     # test de charge (autocannon, base et Redis de TEST) : voir docs/LOAD_TESTING.md
 # Un seul niveau de tests de l'API :
 npm run test:unit -w apps/api        # domaine / use cases, sans réseau ni DB
 npm run test:integration -w apps/api # repositories, storage, migrator (imageservice_test)

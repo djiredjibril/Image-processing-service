@@ -132,7 +132,7 @@ Codes HTTP corrects (201 création, 400 validation, 401 non authentifié, 404 in
 | 3 | Cache par clé de hash des paramètres + rate limiting (Redis) | Terminée |
 | 4 | File d'attente (BullMQ), workers, statut de job (202 + polling) | Terminée |
 | 5 | `S3FileStorage`, stockage objet auto-hébergé, URLs présignées | Terminée |
-| 6 | Durcissement sécurité, tests de charge (k6/autocannon) | En cours |
+| 6 | Durcissement sécurité, tests de charge (k6/autocannon) | Terminée |
 
 **Règle : ne jamais implémenter une phase future, même partiellement.**
 Seule la phase marquée "En cours" est autorisée.
