@@ -12,7 +12,7 @@ Table des matières : [0. Comment tester](#0-comment-tester) · [1. Inscription]
 [6. Transformations](#6-transformations-post-imagesidtransform) · [7. Cache Redis](#7-cache-redis) ·
 [8. Rate limiting](#8-rate-limiting-) · [9. BullMQ](#9-file-dattente-bullmq-) · [10. Stockage](#10-stockage) ·
 [11. Santé, CORS, config](#11-santé-cors-configuration) · [12. Durcissement et sécurité](#12-durcissement-et-sécurité) · [13. Les trois niveaux de tests](#13-les-trois-niveaux-de-tests) ·
-[14. Tester soi-même](#14-tester-soi-même) · [15. Application web](#15-application-web-angular)
+[14. Tester soi-même](#14-tester-soi-même) · [15. Application web](#15-application-web-angular) · [16. Supervision](#16-supervision-redis-bullmq-compteurs)
 
 ---
 
@@ -552,4 +552,47 @@ npm start -w apps/web                    # terminal 3 → http://localhost:4200
 11. **Mobile** : réduire la fenêtre (≈ 400 px) : le formulaire passe en une colonne, rien ne déborde horizontalement.
 
 > Je n'ai pas pu ouvrir un navigateur pendant le développement : la compilation (`ng build`), les 111 tests et les requêtes CORS de pré-vérification (`OPTIONS`) ont été vérifiés, mais **l'aspect visuel et les parcours 3 à 11 sont à valider à l'œil**.
+
+## 16. Supervision : Redis, BullMQ, compteurs ✅
+
+(Voir la file en action : [`docs/BULLMQ.md`](./BULLMQ.md) §5 bis ; observer Redis : [`docs/REDIS.md`](./REDIS.md) §7 bis.)
+
+**Implémentation** : ports `IQueueMonitor`, `IRedisMonitor`, `IStatsCounters` (`domain/ports/monitoring.ts`) ; `BullMqQueueMonitor`, `RedisMonitor` (`INFO` + `SCAN`), `RedisStatsCounters` (`INCR`) ; use case
+`GetMonitoringOverview` ; route `GET /monitoring/overview`. Les compteurs sont alimentés par `TransformImage` (`cache_hit` / `cache_miss`, **API et worker**) et par le middleware de rate limiting (`rate_limited`).
+
+| Variante | Attendu |
+|---|---|
+| sans jeton | `401` |
+| avec jeton | `200`, `Cache-Control: no-store`, `{ generatedAt, redis, queue, counters, recentJobs }` |
+| état de Redis | version (`7.x`), mémoire, clients, durée de fonctionnement, clés par famille (cache, verrous, rate limiting, file) |
+| file vide | tout à 0, `workers: 0`, `available: true` |
+| jobs créés **sans worker** | `waiting` augmente ; `recentJobs` : `queued` |
+| worker lancé | `workers: 1`, les jobs passent `active` puis `completed`, avec leur image |
+| worker arrêté | `workers` retombe à 0 |
+| calcul réel puis même demande | `cache_miss: 1` puis `cache_hit: 1` (aussi pour les calculs du worker) |
+| requête refusée (429) | `rate_limited` +1 par refus |
+| autre utilisateur | voit la charge **globale** de la file, mais **jamais** les jobs d'autrui |
+| Redis arrêté | `200` quand même, `available: false` (Redis et file), compteurs à 0 : la page peut afficher la panne |
+| comptage des clés | par famille ; plafonné (`approximate: true`) s'il y a énormément de clés |
+| quota | l'endpoint compte dans le quota `read` (300/min : une page qui l'interroge chaque seconde passe) |
+
+Tests : `tests/unit/application/get-monitoring-overview.test.ts`, `tests/unit/application/transform-image.test.ts` (compteurs), `tests/unit/infrastructure/rate-limit-middleware.test.ts` (`onLimited`),
+`tests/integration/redis-monitoring.test.ts`, `tests/integration/bullmq-queue-monitor.test.ts` (vrai Redis et vrai worker), `tests/integration/pg-transform-job-repository.test.ts` (`listRecentByOwner`), `tests/e2e/monitoring.test.ts`.
+
+**À tester à la main** (API et worker lancés, jeton `$T`, image `$IMG`) :
+
+```bash
+curl -s localhost:3000/monitoring/overview -H "Authorization: Bearer $T" | python3 -m json.tool        # l'état complet
+
+# 1. La file garde le travail : arrêter le worker (Ctrl+C), créer 3 jobs, relire → queue.counts.waiting = 3, workers = 0 ; relancer le worker → waiting 0, completed +3
+for r in 10 20 30; do curl -s -o /dev/null -X POST localhost:3000/images/$IMG/jobs -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d "{\"rotate\":$r}"; done
+
+# 2. Cache : refaire la même transformation → counters.cache_hit augmente ; une nouvelle → cache_miss
+# 3. Rate limiting : RATE_LIMIT_TRANSFORM=2, 4 transformations → counters.rate_limited = 2
+# 4. Redis arrêté (docker compose stop redis) : l'endpoint répond 200 avec redis.available = false et queue.available = false
+# 5. Voir les commandes Redis EN DIRECT pendant un job (dans un autre terminal) :
+docker compose exec redis redis-cli MONITOR          # Ctrl+C pour arrêter ; ne JAMAIS faire ça en production
+```
+
+> La page « Supervision » de l'application web (graphique en direct, déclencheur de charge) est dans la branche suivante.
 

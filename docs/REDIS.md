@@ -186,6 +186,18 @@ Note : le client ajoute le préfixe `ips:` à toutes les clés (`keyPrefix`), po
 données ne se mélangent pas à celles d'une autre application sur le même Redis.
 Les clés réelles sont donc `ips:cache:transform:<hash>` et `ips:lock:transform:<hash>`.
 
+## 7 bis. Observer Redis sans le casser
+
+| Besoin | Commande | Remarque |
+|---|---|---|
+| Version, mémoire, clients, durée de fonctionnement | `INFO` (ou `INFO memory`) | ce que lit `RedisMonitor` pour la page « Supervision » |
+| Lister des clés | `SCAN 0 MATCH 'ips:cache:*' COUNT 100` (répéter avec le curseur renvoyé jusqu'à 0) | **incrémental** : avance par petits pas |
+| Lister des clés (à éviter) | `KEYS ips:*` | **bloque** Redis pendant tout le parcours : dangereux dès qu'il y a beaucoup de clés ; `RedisMonitor` utilise `SCAN` et plafonne le parcours (`approximate`) |
+| Voir les commandes en direct | `MONITOR` | instructif en développement, jamais en production |
+| Compteurs d'activité de l'application | `MGET ips:stats:cache_hit ips:stats:cache_miss ips:stats:rate_limited` | incrémentés avec `INCR` (atomique) ; repartent de zéro quand Redis est vidé |
+
+Piège : avec ioredis et l'option `keyPrefix`, le motif d'un `SCAN MATCH` n'est **pas** préfixé automatiquement (il faut écrire `ips:*` en entier), et un `KEYS` avec préfixe peut ne rien renvoyer.
+
 ## 8. À retenir
 
 1. Redis = RAM, clé → valeur, très rapide, expiration native (TTL).

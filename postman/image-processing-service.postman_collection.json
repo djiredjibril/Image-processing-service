@@ -340,6 +340,25 @@
         "url": "{{baseUrl}}/jobs/{{jobId}}",
         "description": "Statut du job : `queued` → `processing` → `completed` (le champ `image` contient alors le dérivé, et son id est enregistré dans `derivedId`) ou `failed` (le champ `error` donne le type et le message). À relancer jusqu'à un statut final. 200 | 401 | 404 job inconnu ou d'un autre utilisateur | 429."
       }
+    },
+    {
+      "name": "Monitoring overview",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "{{token}}",
+              "type": "string"
+            }
+          ]
+        },
+        "url": "{{baseUrl}}/monitoring/overview",
+        "description": "Supervision : état de Redis (version, mémoire, clients, clés par famille), de la file BullMQ (waiting/active/delayed/completed/failed, workers connectés), compteurs d'activité (cache_hit, cache_miss, rate_limited) et VOS 10 derniers jobs. Chiffres de charge globaux, jobs personnels. Redis ou la file injoignables : 200 avec available: false. 200 | 401 | 429."
+      }
     }
   ]
 }

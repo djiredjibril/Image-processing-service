@@ -116,6 +116,7 @@ POST /images/:id/transform    applique des transformations, crée un dérivé
 POST /images/:id/jobs         idem en asynchrone (202 + worker BullMQ), phase 4
 GET  /jobs/:id                statut d'un job (polling), phase 4
 GET  /images/:id/url          URL signée temporaire vers le stockage S3, phase 5
+GET  /monitoring/overview     supervision : Redis, file BullMQ, compteurs, jobs de l'appelant (hors phases)
 GET  /images/:id              renvoie le fichier
 GET  /images?page=&limit=     liste paginée des images de l'utilisateur
 ```

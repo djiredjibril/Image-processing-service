@@ -170,6 +170,30 @@ HGETALL ips:bull:transform-image:<jobId> # le job : on y voit data = {"jobId":".
 
 Et en base : `SELECT id, status, attempts, error_kind FROM transform_jobs ORDER BY created_at DESC;`
 
+## 5 bis. Voir la file en action
+
+Quatre façons, de la plus brute à la plus confortable :
+
+1. **`redis-cli`** (voir §5) : `LLEN ips:bull:transform-image:wait`, `ZCARD ...:delayed`, `LLEN ...:active`, `ZCARD ...:failed`.
+2. **`redis-cli MONITOR`** : affiche **toutes les commandes** reçues par Redis en direct (les `BRPOPLPUSH`/`BZPOPMIN` du worker qui attend, les `HSET` d'un job, les scripts Lua...). Très instructif, mais **jamais en production** (coûteux, et il montre tout, données comprises).
+3. **L'endpoint `GET /monitoring/overview`** et la **page « Supervision »** de l'application web : compteurs de la file, workers connectés, mémoire et clés de Redis, compteurs d'activité, vos jobs, rafraîchis chaque seconde.
+4. **Bull Board** (outil tiers, non installé ici) : une interface web généraliste pour BullMQ (liste des jobs, données, relance d'un job échoué...). Plus riche, mais il expose les **données** des jobs et des actions d'administration : il demanderait une authentification d'administrateur que ce projet n'a pas.
+
+**Comment l'endpoint lit la file** (`bullmq-queue-monitor.ts`) : `queue.getJobCounts(...)` (commandes de lecture sur les listes et ensembles de BullMQ) et `queue.getWorkers()`, qui interroge `CLIENT LIST` de Redis et reconnaît les connexions des workers par leur nom. Lecture seule, bornée à ~1,5 s, `available: false` si Redis ne répond pas.
+
+**Ce que signifient les compteurs** :
+
+| Compteur | Sens |
+|---|---|
+| `waiting` | jobs en file, pas encore pris par un worker (s'accumulent sans worker) |
+| `active` | jobs en cours de traitement par un worker |
+| `delayed` | jobs en attente d'une **nouvelle tentative** (backoff exponentiel après une panne technique) |
+| `completed` | jobs que BullMQ considère comme terminés, **y compris** les échecs métier (voir §4.3) : le statut « réussi » est en base |
+| `failed` | jobs épuisés après toutes leurs tentatives |
+| workers | connexions de workers vivantes ; 0 = personne ne traite la file |
+
+> Confidentialité : ces chiffres sont **globaux** (charge du système) ; la liste de jobs, elle, n'est que celle de l'appelant. L'endpoint n'expose ni identifiant de worker, ni adresse réseau, ni clé Redis.
+
 ## 6. À retenir
 
 1. Une file découple **« demander »** de **« faire »** : réponse immédiate (`202`), travail en arrière-plan, process séparés.

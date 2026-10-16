@@ -337,3 +337,14 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 4. **Lire le code HTTP, pas seulement le corps.** `observe: 'response'` permet de distinguer `201` (créé) de `200` (déjà produit, cache) : le même corps JSON, deux sens. Le message de l'API (`{ error, message }`) est affiché tel quel : une seule traduction d'erreurs, côté serveur.
 5. **Dire ce qu'on n'a pas vérifié.** Sans navigateur, j'ai vérifié build, tests (111) et pré-vérifications CORS, mais pas l'aspect visuel : c'est écrit noir sur blanc dans le guide de test, avec les parcours à valider à l'œil.
 
+## Supervision
+
+### Voir Redis et BullMQ en action (`feat/monitoring-api`)
+
+1. **Observer sans perturber.** Lire l'état de la file (`getJobCounts`, `getWorkers` → `CLIENT LIST`) et de Redis (`INFO`, `SCAN`) est en LECTURE SEULE. Deux pièges : `KEYS` bloque Redis (on utilise `SCAN`, incrémental et plafonné, avec un indicateur
+   `approximate`), et `MONITOR` montre tout mais ne se met jamais en production.
+2. **Fail-open pour l'observabilité.** Redis ou la file injoignables ne doivent pas faire échouer la page qui sert justement à voir la panne : `200` avec `available: false`, chaque lecture bornée dans le temps (~1,5 s).
+3. **Des indicateurs d'activité simples.** Trois compteurs Redis (`INCR`, atomique) alimentés là où l'information existe déjà : `TransformImage` sait si une réponse vient du cache (API **et** worker), le middleware sait qu'il refuse. Un indicateur perdu est sans conséquence : fail-open.
+4. **Confidentialité : global ≠ personnel.** Les chiffres de charge sont globaux (aucune donnée d'autrui), la liste de jobs est celle de l'appelant ; ni identifiant de worker, ni adresse, ni clé Redis. Un outil comme Bull Board, lui, expose les DONNÉES des jobs et exige un rôle d'administrateur.
+5. **Un test qui passait pour de mauvaises raisons.** Mon test « un worker traite le job » utilisait un stockage différent de celui de l'envoi : le job échouait en « image introuvable » (échec métier), que BullMQ compte comme « completed » : le test passait. Corrigé en vérifiant le statut RÉEL en base. Rappel de la phase 4 : « completed » côté BullMQ ≠ « réussi ».
+
