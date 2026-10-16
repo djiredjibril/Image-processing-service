@@ -83,7 +83,7 @@ npm run test:e2e -w apps/api         # requêtes HTTP (supertest) sur la base de
 | POST | `/images` | Authentifié. Multipart, champ `image` (JPEG, PNG ou WebP ; 10 Mo et 8000 px par côté par défaut). 201 `{ id, format, sizeBytes, width, height, createdAt }`, 400 fichier manquant ou illisible, 401, 413 trop lourd ou trop grand, 415 format non supporté. Le type est vérifié par les magic bytes |
 | GET | `/images/:id` | Authentifié. Renvoie le fichier en flux avec son `Content-Type`. 200, 401, 404 (image inconnue, UUID invalide ou appartenant à un autre utilisateur : jamais 403) |
 | GET | `/images?page=&limit=` | Authentifié. Liste paginée de SES images, la plus récente d'abord (défauts `page=1`, `limit=10`, `limit` max 50). 200 `{ items, page, limit, total }`, 400 si hors bornes ou non numérique, 401 |
-| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). 201 `{ id, originalId, format, sizeBytes, width, height, createdAt }`, 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur) |
+| POST | `/images/:id/transform` | Authentifié. Crée une image **dérivée** (l'original n'est jamais modifié). Corps JSON, toutes les clés optionnelles (au moins une opération) : `crop {x,y,width,height}`, `rotate` (entier -360 à 360, sens horaire), `flip` (vertical), `mirror` (horizontal), `resize {width?,height?,fit?}` (1 à 8000 px ; `fit` : cover, contain, fill, inside par défaut, outside), `filter` (`grayscale` ou `sepia`), `watermark {text,position?,opacity?}` (filigrane texte, voir plus bas), `format` (`jpeg`, `png`, `webp`), `quality` (1-100, jpeg et webp). `201` + `X-Cache: MISS` (dérivé créé) ou `200` + `X-Cache: HIT` (déjà produit : renvoyé depuis le cache, sans retraitement), corps `{ id, originalId, format, sizeBytes, width, height, createdAt }` ; 400 paramètres invalides, 401, 404 (image inconnue ou d'un autre utilisateur) |
 
 Les routes protégées attendent l'en-tête `Authorization: Bearer <token>` ; sans jeton valide : 401.
 
@@ -113,6 +113,20 @@ racine. Les dérivés apparaissent dans `GET /images`.
 sa taille suit l'image finale. Il est rendu par `sharp` à partir d'un SVG (texte échappé) : **le rendu dépend des
 polices du système** (`sans-serif` gras) ; sur un serveur sans police installée, le texte pourrait ne pas s'afficher. Le résultat ne peut pas dépasser `MAX_IMAGE_PIXELS_SIDE`
 par côté (ajouter un `resize`).
+
+## Cache des transformations
+
+Une même transformation (même utilisateur, même image source, mêmes paramètres) n'est calculée **qu'une fois**.
+La clé de cache est un SHA-256 des paramètres *normalisés* : valeurs par défaut explicites ou omises (`fit`
+« inside », position « bottom-right », opacité 0,5), `flip: false`, rotation -90° ≡ 270°, espaces autour du texte
+du filigrane et ordre des champs n'ont aucun effet. Redis conserve `clé → identifiant du dérivé` pendant
+`CACHE_TTL_SECONDS` (24 h par défaut). Avant de servir une entrée, l'API vérifie en base que le dérivé existe
+encore et appartient bien à l'utilisateur et à la même image d'origine (le cache n'est qu'un index).
+
+Deux demandes identiques **simultanées** sont sérialisées par un verrou Redis (`SET NX PX`, libéré par un script Lua
+qui compare le jeton du détenteur) : une seule calcule, l'autre attend son résultat (5 s au plus) puis le renvoie.
+Si Redis est indisponible, la transformation fonctionne quand même, simplement sans dédoublonnage (« fail-open »).
+`TRANSFORM_CACHE_VERSION` (dans `transform-cache-key.ts`) est à incrémenter quand le rendu des transformations change.
 
 ## Redis
 

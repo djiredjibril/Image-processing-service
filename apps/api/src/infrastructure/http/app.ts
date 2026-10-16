@@ -64,6 +64,8 @@ export function createApp(deps: AppDependencies): Express {
       },
       methods: ["GET", "POST"],
       allowedHeaders: ["Authorization", "Content-Type"],
+      // En-têtes de réponse lisibles par le JavaScript du navigateur (les autres sont masqués par CORS).
+      exposedHeaders: ["X-Cache"],
       maxAge: 600,
     }),
   );

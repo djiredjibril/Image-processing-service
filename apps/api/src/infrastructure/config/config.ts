@@ -27,6 +27,8 @@ const configSchema = z.object({
     .default("1h"),
   // Base 0 en développement ; les tests utilisent TEST_REDIS_URL (base 1) pour ne jamais toucher aux données de dev.
   REDIS_URL: z.string().min(1).default("redis://localhost:6380/0"),
+  // Durée de vie d'une entrée du cache des transformations (24 h par défaut).
+  CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
   CORS_ORIGIN: z
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")

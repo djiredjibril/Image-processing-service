@@ -26,11 +26,28 @@ export class FakeImageProcessor implements IImageProcessor {
     return Promise.resolve(this.metadata === null ? err(new CorruptedImageError("illisible")) : ok(this.metadata));
   }
 
-  transform(data: Uint8Array, transformations: TransformationSet, outputFormat: ImageFormat): Promise<Result<TransformedImage, CorruptedImageError>> {
+  /** Si renseignée, `transform` attend cette promesse avant de répondre : permet de simuler un traitement lent. */
+  transformGate: Promise<void> | null = null;
+  private onTransformStarted: (() => void) | null = null;
+
+  /** Promesse résolue au prochain appel de `transform` : permet de savoir qu'un traitement a démarré. */
+  nextTransformStarted(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      this.onTransformStarted = resolve;
+    });
+  }
+
+  async transform(data: Uint8Array, transformations: TransformationSet, outputFormat: ImageFormat): Promise<Result<TransformedImage, CorruptedImageError>> {
     this.transformCalls.push({ data, transformations, outputFormat });
-    if (this.transformed === null) {
-      return Promise.resolve(err(new CorruptedImageError("illisible")));
+    // Le résultat est celui configuré au DÉMARRAGE de ce traitement, pas à sa fin (comme un vrai traitement).
+    const outcome = this.transformed;
+    this.onTransformStarted?.();
+    if (this.transformGate !== null) {
+      await this.transformGate;
     }
-    return Promise.resolve(ok({ data: this.transformed.bytes, format: outputFormat, width: this.transformed.width, height: this.transformed.height }));
+    if (outcome === null) {
+      return err(new CorruptedImageError("illisible"));
+    }
+    return ok({ data: outcome.bytes, format: outputFormat, width: outcome.width, height: outcome.height });
   }
 }

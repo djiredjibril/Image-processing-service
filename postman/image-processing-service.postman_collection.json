@@ -194,7 +194,7 @@
           "script": {
             "type": "text/javascript",
             "exec": [
-              "if (pm.response.code === 201) {",
+              "if (pm.response.code === 200 || pm.response.code === 201) {",
               "  pm.collectionVariables.set('derivedId', pm.response.json().id);",
               "}"
             ]
@@ -224,7 +224,7 @@
           "mode": "raw",
           "raw": "{\n  \"crop\": { \"x\": 0, \"y\": 0, \"width\": 200, \"height\": 200 },\n  \"rotate\": 90,\n  \"flip\": false,\n  \"mirror\": true,\n  \"resize\": { \"width\": 300, \"fit\": \"inside\" },\n  \"filter\": \"sepia\",\n  \"watermark\": { \"text\": \"© Mon Studio\", \"position\": \"bottom-right\", \"opacity\": 0.6 },\n  \"format\": \"webp\",\n  \"quality\": 80\n}"
         },
-        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → watermark → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. watermark = filigrane texte : text (1 à 30 caractères : lettres, chiffres, espace et . , ' : ; ! ? @ # & ( ) © _ -), position = center|top-left|top-right|bottom-left|bottom-right (défaut bottom-right), opacity 0,1 à 1 (défaut 0,5). format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}."
+        "description": "Crée une image DÉRIVÉE (l'original n'est jamais modifié). Toutes les clés sont optionnelles, au moins une opération est requise. Ordre d'application : orientation EXIF → crop → rotate → flip → mirror → resize → filter → watermark → format/quality. rotate : entier de -360 à 360 (sens horaire). flip = vertical, mirror = horizontal. resize : width et/ou height (1 à 8000), fit = cover|contain|fill|inside|outside (défaut inside). filter = grayscale|sepia. watermark = filigrane texte : text (1 à 30 caractères : lettres, chiffres, espace et . , ' : ; ! ? @ # & ( ) © _ -), position = center|top-left|top-right|bottom-left|bottom-right (défaut bottom-right), opacity 0,1 à 1 (défaut 0,5). format = jpeg|png|webp. quality 1-100 (jpeg/webp seulement). 201 + en-tête `X-Cache: MISS` = dérivé créé ; 200 + `X-Cache: HIT` = la même transformation avait déjà été faite (cache Redis, 24 h) : le dérivé existant est renvoyé sans retraitement ni doublon. Corps : { id, originalId, format, sizeBytes, width, height, createdAt } (l'id est enregistré dans `derivedId`) | 400 paramètres invalides | 401 | 404 image inconnue ou d'un autre utilisateur. Pour voir le résultat : adapter l'URL de « Get image » avec {{derivedId}}."
       }
     }
   ]

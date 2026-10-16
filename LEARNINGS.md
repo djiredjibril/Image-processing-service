@@ -199,3 +199,24 @@ Journal des concepts rencontrés, feature par feature (ce que c'est, pourquoi, p
 5. **Isolation des tests** : base Redis 1 pour les tests (0 pour le dev), préfixe de clés `ips:`, et un garde-fou qui refuse de
    vider (`FLUSHDB`) la base si l'URL de test pointait par erreur sur la base 0. Port hôte 6380 (comme 5433 pour Postgres) pour
    ne pas entrer en conflit avec d'autres projets locaux. Pas de persistance : des données jetables n'en ont pas besoin.
+
+### Cache des transformations (`feat/p3-transform-cache`)
+
+1. **On met en cache un INDEX, pas les octets** : `clé → identifiant du dérivé`. Les images restent dans le stockage et la base ;
+   Redis n'économise que le recalcul (et évite les doublons). Avant de servir une entrée, on la revérifie en base (le dérivé existe
+   encore ? même propriétaire ? même racine ?) : une entrée périmée ou « empoisonnée » est ignorée, jamais crue sur parole.
+2. **La clé doit être canonique.** Deux demandes qui donnent forcément le même résultat doivent produire la même clé (valeurs par défaut
+   explicites ou omises, `flip: false` ≡ absent, -90° ≡ 270°), sinon le cache rate des occasions. Pour qu'elle soit stable on
+   hache un tableau POSITIONNEL (ordre fixé par construction) et non un objet. La clé contient l'utilisateur (aucune fuite entre
+   comptes) et une VERSION du traitement : changer le pipeline sans incrémenter la version servirait d'anciens résultats.
+3. **Cache stampede (ruée).** À froid, N requêtes identiques simultanées font toutes un MISS et calculent N dérivés. Remède :
+   un verrou par clé (`SET key jeton NX PX ttl`, atomique) ; le détenteur calcule, les autres attendent le résultat. Détails qui comptent :
+   le verrou EXPIRE seul (le détenteur peut planter), on le libère avec un script Lua qui vérifie le jeton (un détenteur lent ne doit pas
+   supprimer le verrou d'un autre), on RELIT le cache après avoir obtenu le verrou (double vérification), et l'attendant abandonne dès
+   que le verrou disparaît sans résultat. On n'écrit dans le cache qu'APRÈS l'enregistrement en base : une clé ne pointe jamais vers rien.
+4. **Un test qui passe n'est pas forcément un bon test.** Mon premier test de concurrence passait même sans verrou : l'image de test
+   était si petite que la 1re requête finissait avant l'arrivée des autres. On l'a détecté en désactivant le verrou (test de mutation) puis
+   corrigé avec une grande image (8 × 201 sans verrou, 1 × 201 + 7 × 200 avec). Vérifier qu'un test ÉCHOUE quand on casse le code.
+5. **Fail-open et sémantique HTTP.** Si Redis tombe, le cache se comporte comme un cache vide (aucune méthode ne lève) et la transformation
+   se fait quand même. Un HIT renvoie 200 (rien n'a été créé) et non 201, avec `X-Cache: HIT|MISS` ; cet en-tête doit être listé dans
+   `Access-Control-Expose-Headers` sinon le navigateur le masque au JavaScript. Mesuré : MISS 145 ms, HIT 4,6 ms (×30).
