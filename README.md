@@ -101,6 +101,16 @@ Les images sont écrites sous `STORAGE_LOCAL_DIR` (défaut `storage/`, soit `app
 générée : `originals/<uuid>.<ext>` pour un envoi, `derived/<uuid>.<ext>` pour une transformation ; le nom de
 fichier envoyé par le client n'est jamais utilisé.
 
+### Stockage objet S3 (phase 5)
+
+`STORAGE_DRIVER=s3` remplace le disque par un stockage objet compatible S3 (SeaweedFS, lancé par `docker compose`, port 8333) :
+l'API et les workers partagent alors le même bucket, quelle que soit leur machine. Variables obligatoires dans ce mode :
+`S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (`S3_REGION` et `S3_FORCE_PATH_STYLE` ont des valeurs par défaut
+adaptées à un stockage auto-hébergé) ; voir `apps/api/.env.example` (identifiants de développement du SeaweedFS fourni).
+Le bucket est créé au démarrage s'il n'existe pas ; l'application refuse de démarrer si le stockage reste injoignable (10 essais).
+Les clés sont les mêmes que sur disque (`originals/<uuid>.<ext>`). Guide complet : `docs/S3.md`. Les tests d'intégration et E2E de
+stockage ont besoin de SeaweedFS (`docker compose up -d --wait`) et utilisent le bucket `imageservice-test`.
+
 ## Transformations d'images
 
 Ordre d'application, fixe : orientation EXIF → crop → rotate → flip → mirror → resize → filtre → filigrane → format

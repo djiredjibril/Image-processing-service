@@ -20,6 +20,8 @@
     "test": "npm run test:unit && npm run test:integration && npm run test:e2e"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1152.0",
+    "@aws-sdk/s3-request-presigner": "^3.1152.0",
     "argon2": "^0.45.1",
     "bullmq": "^6.3.15",
     "cors": "^2.8.6",

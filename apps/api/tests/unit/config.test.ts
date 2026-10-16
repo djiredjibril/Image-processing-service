@@ -52,7 +52,41 @@ describe("loadConfig", () => {
   });
 
   it("refuse un STORAGE_DRIVER inconnu et un PORT hors bornes", () => {
-    expect(isErr(loadConfig({ ...validEnv, STORAGE_DRIVER: "s3" }))).toBe(true);
+    expect(isErr(loadConfig({ ...validEnv, STORAGE_DRIVER: "gcs" }))).toBe(true);
     expect(isErr(loadConfig({ ...validEnv, PORT: "70000" }))).toBe(true);
+  });
+
+  describe("stockage S3", () => {
+    const s3Env = {
+      ...validEnv,
+      STORAGE_DRIVER: "s3",
+      S3_ENDPOINT: "http://localhost:8333",
+      S3_BUCKET: "imageservice-dev",
+      S3_ACCESS_KEY_ID: "id",
+      S3_SECRET_ACCESS_KEY: "secret",
+    };
+
+    it("accepte une configuration S3 complète, avec région us-east-1 et adressage par chemin par défaut", () => {
+      const result = loadConfig(s3Env);
+      expect(isOk(result)).toBe(true);
+      if (isOk(result)) {
+        expect(result.value).toMatchObject({ STORAGE_DRIVER: "s3", S3_REGION: "us-east-1", S3_FORCE_PATH_STYLE: true });
+      }
+    });
+
+    it("exige chacune des variables S3 quand STORAGE_DRIVER=s3, en nommant celle qui manque", () => {
+      for (const name of ["S3_ENDPOINT", "S3_BUCKET", "S3_ACCESS_KEY_ID", "S3_SECRET_ACCESS_KEY"]) {
+        const { [name]: _removed, ...incomplete } = s3Env as Record<string, string>;
+        const result = loadConfig(incomplete);
+        expect(isErr(result) && result.error.some((line) => line.includes(name))).toBe(true);
+      }
+    });
+
+    it("n'exige aucune variable S3 avec le driver local, et refuse un endpoint ou un nom de bucket invalide", () => {
+      expect(isOk(loadConfig(validEnv))).toBe(true);
+      expect(isErr(loadConfig({ ...s3Env, S3_ENDPOINT: "pas-une-url" }))).toBe(true);
+      expect(isErr(loadConfig({ ...s3Env, S3_BUCKET: "ab" }))).toBe(true);
+      expect(isErr(loadConfig({ ...s3Env, S3_FORCE_PATH_STYLE: "peut-etre" }))).toBe(true);
+    });
   });
 });

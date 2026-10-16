@@ -1,0 +1,9 @@
+{
+  "identities": [
+    {
+      "name": "imageservice",
+      "credentials": [{ "accessKey": "imageservice", "secretKey": "imageservice-secret" }],
+      "actions": ["Admin", "Read", "Write", "List", "Tagging"]
+    }
+  ]
+}

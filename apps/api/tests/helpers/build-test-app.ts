@@ -13,6 +13,7 @@ import { LoginUser } from "../../src/application/use-cases/login-user.js";
 import { RegisterUser } from "../../src/application/use-cases/register-user.js";
 import { TransformImage } from "../../src/application/use-cases/transform-image.js";
 import { UploadImage } from "../../src/application/use-cases/upload-image.js";
+import type { IFileStorage } from "../../src/domain/ports/file-storage.js";
 import type { ITransformCache } from "../../src/domain/ports/transform-cache.js";
 import { createRedisClient } from "../../src/infrastructure/cache/redis-client.js";
 import { createApp } from "../../src/infrastructure/http/app.js";
@@ -35,6 +36,8 @@ export const TEST_JWT_SECRET = "test-secret-test-secret-test-secret-1234";
 export interface TestAppOptions {
   /** Dossier de stockage (un dossier temporaire par fichier de test). */
   readonly storageDir?: string;
+  /** Stockage à utiliser (défaut : `LocalFileStorage` sur `storageDir`). */
+  readonly storage?: IFileStorage;
   readonly maxUploadBytes?: number;
   readonly maxPixelsSide?: number;
   /** Origine CORS autorisée (défaut : celle de l'app Angular en dev). */
@@ -59,7 +62,7 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
   const users = new PgUserRepository(pool);
   const hasher = new Argon2PasswordHasher();
   const tokens = new JwtTokenService(TEST_JWT_SECRET, "1h");
-  const storage = new LocalFileStorage(options.storageDir ?? "storage-test");
+  const storage = options.storage ?? new LocalFileStorage(options.storageDir ?? "storage-test");
   const images = new PgImageRepository(pool);
   const transformJobs = new PgTransformJobRepository(pool);
   const maxPixelsSide = options.maxPixelsSide ?? 8000;

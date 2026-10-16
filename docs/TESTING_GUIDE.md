@@ -347,21 +347,51 @@ Expériences à faire pour **voir** les concepts :
 6. **Arrêt propre** : créer un job sur une grande image (3000×2000 ou plus), faire Ctrl+C sur le worker pendant le traitement : il termine le job avant de quitter.
 7. **Cache** : refaire exactement le même job → le second est `completed` quasi instantanément avec le même `image.id`.
 
-## 10. Stockage ✅ (S3 🔜 phase 5)
+## 10. Stockage : disque local et S3 ✅ (URLs présignées : branche suivante)
 
-**Implémentation** : le port `IFileStorage` (`put`, `get`, `delete`, `exists`) est défini dans le domaine ;
-`LocalFileStorage` écrit sur disque. Les clés sont des chaînes (`originals/<uuid>.jpg`), jamais des chemins
-absolus. Aucune route ni use case n'utilise `fs`.
+(Concepts : [`docs/S3.md`](./S3.md).)
+
+**Implémentation** : le port `IFileStorage` (`put`, `get`, `delete`, `exists`) est défini dans le domaine ; `LocalFileStorage` (disque) et
+`S3FileStorage` (SeaweedFS, SDK AWS) le respectent. `STORAGE_DRIVER` choisit (`local` par défaut). Les clés sont des chaînes
+(`originals/<uuid>.jpg`), jamais des chemins ni des noms fournis par l'utilisateur. Aucune route ni use case n'utilise `fs` ni le SDK.
+
+Le **même contrat** est vérifié pour les deux implémentations (`tests/helpers/file-storage-contract.ts`) :
 
 | Variante | Attendu |
 |---|---|
-| `put` puis `get` | mêmes octets |
-| `exists` avant/après `delete` | `true` / `false` |
-| clé avec `..`, `/` initial ou `\` | `StorageKey` refuse de se construire (par construction), et `LocalFileStorage` revérifie le chemin (défense en profondeur) |
-| `get` d'une clé absente | renvoie `null`, pas de crash |
+| `put` puis `get` (octets non textuels) | mêmes octets |
+| fichier de 6 Mo | relu en flux, identique |
+| `get` d'une clé absente | `null`, pas de crash |
+| `exists` avant / après `put` / après `delete` | `false` / `true` / `false` |
+| `delete` d'une clé absente, répété | sans erreur (idempotent) |
+| second `put` sur la même clé | **échoue**, contenu d'origine conservé (immutable) |
+| 5 `put` simultanés sur la même clé | un seul réussit (atomique : `wx` sur disque, `If-None-Match: *` sur S3) |
+| clés différentes | indépendantes |
+| clé avec `..`, `/` initial ou `\` | `StorageKey` refuse de se construire ; `LocalFileStorage` revérifie le chemin |
 
-Test : `tests/integration/local-file-storage.test.ts`. En phase 5, un `S3FileStorage` respectera le **même**
-contrat, et les mêmes tests de contrat s'appliqueront.
+Spécifique S3 (tests E2E avec un vrai SeaweedFS) : l'objet est dans le bucket sous la clé enregistrée en base, avec le bon `Content-Type` et la bonne
+taille ; `GET /images/:id` renvoie les mêmes octets que l'upload ; un autre utilisateur reçoit `404` ; la transformation synchrone écrit sous
+`derived/` sans toucher l'original ; objet disparu du bucket → `404` ; le **worker** lit la source et écrit le dérivé dans le même bucket que l'API.
+Configuration : `STORAGE_DRIVER=s3` exige `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` (message clair pour celle qui manque) ;
+endpoint non-URL, bucket < 3 caractères ou `S3_FORCE_PATH_STYLE` invalide → démarrage refusé.
+
+Tests : `tests/integration/file-storage-contract.test.ts` (disque + S3), `tests/e2e/s3-storage.test.ts`, `tests/unit/config.test.ts`,
+`tests/integration/local-file-storage.test.ts`. **Prérequis : `docker compose up -d --wait`** (SeaweedFS sur le port 8333 ; bucket de test `imageservice-test`).
+
+**À tester à la main** :
+
+```bash
+docker compose up -d --wait
+# dans apps/api/.env : STORAGE_DRIVER=s3 + S3_ENDPOINT / S3_BUCKET / S3_ACCESS_KEY_ID / S3_SECRET_ACCESS_KEY (voir .env.example)
+npm run dev -w apps/api             # le bucket est créé au démarrage ; sans SeaweedFS : 10 essais puis erreur claire
+npm run worker -w apps/api          # le worker utilise le MÊME stockage
+```
+
+1. **Upload puis lecture** (Postman : « Upload image » puis « Get image ») : l'image revient identique, et `apps/api/storage/` ne contient **rien** de nouveau (tout est dans le bucket).
+2. **Voir l'objet** avec la CLI AWS (si installée) : `AWS_ACCESS_KEY_ID=imageservice AWS_SECRET_ACCESS_KEY=imageservice-secret aws --endpoint-url http://localhost:8333 s3 ls s3://imageservice-dev --recursive`.
+3. **Panne du stockage** : `docker compose stop seaweedfs` puis `GET /images/<id>` → `500` (erreur inattendue, loguée) ; au **démarrage** de l'API, elle réessaie 10 s puis refuse de démarrer. `docker compose start seaweedfs` pour réparer.
+4. **Passage disque → S3** : les images déjà envoyées en mode `local` ne sont pas dans le bucket (leurs lignes existent en base) → `GET` renvoie `404`. Pour les migrer, copier `storage/` dans le bucket en gardant les clés (voir `docs/S3.md` §4.7).
+5. **Retour en arrière** : remettre `STORAGE_DRIVER=local` ; les images envoyées en mode S3 ne sont alors plus lisibles (même raison, dans l'autre sens).
 
 ## 11. Santé, CORS, configuration ✅
 
