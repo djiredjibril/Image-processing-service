@@ -39,7 +39,10 @@ export const GALLERY_PAGE_SIZE = 12;
                   <app-authed-image [imageId]="item.id" [alt]="'Image ' + item.format" imgClass="h-full w-full object-cover transition group-hover:scale-105" class="h-full w-full" />
                 </div>
                 <div class="px-3 py-2 text-xs text-slate-600">
-                  <div class="font-medium uppercase">{{ item.format }} · {{ item.width }}×{{ item.height }}</div>
+                  <div class="font-medium uppercase">
+                    {{ item.format }} · {{ item.width }}×{{ item.height }}
+                    @if (item.originalId !== null) { <span class="ml-1 rounded bg-indigo-100 px-1.5 py-0.5 text-[10px] font-semibold normal-case text-indigo-700">dérivée</span> }
+                  </div>
                   <div>{{ item.createdAt | date: 'dd/MM/yyyy HH:mm' }}</div>
                 </div>
               </a>
