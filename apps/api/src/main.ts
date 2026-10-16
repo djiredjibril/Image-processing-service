@@ -13,6 +13,7 @@ import { RegisterUser } from "./application/use-cases/register-user.js";
 import { TransformImage } from "./application/use-cases/transform-image.js";
 import { UploadImage } from "./application/use-cases/upload-image.js";
 import { createRedisClient, waitForRedis } from "./infrastructure/cache/redis-client.js";
+import { RedisRateLimiter } from "./infrastructure/cache/redis-rate-limiter.js";
 import { RedisTransformCache } from "./infrastructure/cache/redis-transform-cache.js";
 import { createApp } from "./infrastructure/http/app.js";
 import { SharpImageProcessor } from "./infrastructure/image/sharp-image-processor.js";
@@ -61,6 +62,13 @@ const app = createApp({
     maxPixelsSide: config.value.MAX_IMAGE_PIXELS_SIDE,
   }),
   tokens,
+  rateLimiter: new RedisRateLimiter(redis),
+  rateLimits: {
+    auth: { limit: config.value.RATE_LIMIT_AUTH, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
+    upload: { limit: config.value.RATE_LIMIT_UPLOAD, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
+    transform: { limit: config.value.RATE_LIMIT_TRANSFORM, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
+    read: { limit: config.value.RATE_LIMIT_READ, windowSeconds: config.value.RATE_LIMIT_WINDOW_SECONDS },
+  },
   maxUploadBytes: config.value.MAX_UPLOAD_BYTES,
   corsOrigin: config.value.CORS_ORIGIN,
 });

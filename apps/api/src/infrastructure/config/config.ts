@@ -29,6 +29,12 @@ const configSchema = z.object({
   REDIS_URL: z.string().min(1).default("redis://localhost:6380/0"),
   // Durée de vie d'une entrée du cache des transformations (24 h par défaut).
   CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(86_400),
+  // Rate limiting : requêtes autorisées par fenêtre (RATE_LIMIT_WINDOW_SECONDS, 60 s par défaut) et par palier.
+  RATE_LIMIT_WINDOW_SECONDS: z.coerce.number().int().positive().default(60),
+  RATE_LIMIT_AUTH: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_UPLOAD: z.coerce.number().int().positive().default(20),
+  RATE_LIMIT_TRANSFORM: z.coerce.number().int().positive().default(10),
+  RATE_LIMIT_READ: z.coerce.number().int().positive().default(300),
   CORS_ORIGIN: z
     .string()
     .refine(isPlainOrigin, "CORS_ORIGIN doit être une origine exacte, ex. http://localhost:4200 (sans chemin, sans / final, sans *)")

@@ -17,6 +17,9 @@ import { PgUserRepository } from "../../src/infrastructure/persistence/pg-user-r
 import { JwtTokenService } from "../../src/infrastructure/security/jwt-token-service.js";
 import { Argon2PasswordHasher } from "../../src/infrastructure/security/argon2-password-hasher.js";
 import { LocalFileStorage } from "../../src/infrastructure/storage/local-file-storage.js";
+import type { IRateLimiter } from "../../src/domain/ports/rate-limiter.js";
+import type { RateLimitsConfig } from "../../src/infrastructure/http/rate-limit-middleware.js";
+import { InMemoryRateLimiter } from "../fakes/in-memory-rate-limiter.js";
 import { InMemoryTransformCache } from "../fakes/in-memory-transform-cache.js";
 import { testRedisUrl } from "./test-redis.js";
 
@@ -35,7 +38,13 @@ export interface TestAppOptions {
   readonly redis?: Redis;
   /** Cache des transformations ; par défaut un cache en mémoire NEUF par application (aucune fuite entre tests). */
   readonly cache?: ITransformCache;
+  /** Limiteur de débit ; par défaut un limiteur en mémoire NEUF par application. */
+  readonly rateLimiter?: IRateLimiter;
+  /** Règles de limitation ; par défaut très hautes pour ne jamais gêner les autres tests. */
+  readonly rateLimits?: RateLimitsConfig;
 }
+
+const NEVER_LIMITED = { limit: 1_000_000, windowSeconds: 60 };
 
 /** Construit l'application avec la base de test fournie (limites par défaut : 10 Mo, 8000 px). */
 export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Express {
@@ -58,6 +67,8 @@ export function buildTestApp(pool: pg.Pool, options: TestAppOptions = {}): Expre
     listImages: new ListImages(images),
     transformImage: new TransformImage(images, storage, processor, options.cache ?? new InMemoryTransformCache(), { maxPixelsSide }),
     tokens,
+    rateLimiter: options.rateLimiter ?? new InMemoryRateLimiter(),
+    rateLimits: options.rateLimits ?? { auth: NEVER_LIMITED, upload: NEVER_LIMITED, transform: NEVER_LIMITED, read: NEVER_LIMITED },
     maxUploadBytes,
     corsOrigin: options.corsOrigin ?? "http://localhost:4200",
   });
